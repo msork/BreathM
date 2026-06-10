@@ -1,0 +1,15 @@
+[0;1;32m●[0m xdg-desktop-portal.service - Portal service
+     Loaded: loaded (]8;;file://pupi-linux/usr/lib/systemd/user/xdg-desktop-portal.service\/usr/lib/systemd/user/xdg-desktop-portal.service]8;;\; static[0;1;38:5:185m[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2026-06-10 17:28:37 EDT; 1h 12min ago
+ Invocation: ce039da48bb5455da7ce06735e8a2c0e
+   Main PID: 7763 (xdg-desktop-por)
+      Tasks: 9[0;38:5:245m (limit: 37213)[0m
+        CPU: 864ms
+     CGroup: /user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service
+             └─[0;38:5:245m7763 /usr/libexec/xdg-desktop-portal[0m
+
+Jun 10 17:28:36 pupi-linux systemd[7161]: Starting Portal service...
+Jun 10 17:28:37 pupi-linux systemd[7161]: Started Portal service.
+Jun 10 17:28:50 pupi-linux /usr/libexec/xdg-desktop-portal[7763]: [0;1;38:5:185m[0;1;39m[0;1;38:5:185mRealtime error: Could not get pidns for pid 12570: Could not fstatat ns/pid: Not a directory[0m
+Jun 10 17:28:51 pupi-linux /usr/libexec/xdg-desktop-portal[7763]: [0;1;38:5:185m[0;1;39m[0;1;38:5:185mRealtime error: Could not get pidns for pid 12570: Could not fstatat ns/pid: Not a directory[0m
+Jun 10 17:29:48 pupi-linux /usr/libexec/xdg-desktop-portal[7763]: [0;1;38:5:185m[0;1;39m[0;1;38:5:185mRealtime error: Could not get pidns for pid 16373: Could not fstatat ns/pid: Not a directory[0m

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -78,6 +79,14 @@ class BreathMLauncher(QWidget):
 
         self.cemu_label = QLabel()
         self.game_label = QLabel()
+
+        self.cemu_path_input = QLineEdit()
+        self.cemu_path_input.setPlaceholderText("Paste Cemu executable path here")
+        self.cemu_path_input.editingFinished.connect(self.save_cemu_path_from_input)
+
+        self.game_path_input = QLineEdit()
+        self.game_path_input.setPlaceholderText("Paste BOTW .wua path here")
+        self.game_path_input.editingFinished.connect(self.save_game_path_from_input)
         self.region_label = QLabel()
         self.game_version_label = QLabel()
 
@@ -114,9 +123,11 @@ class BreathMLauncher(QWidget):
         main_layout.addWidget(self.flatpak_checkbox)
 
         main_layout.addWidget(self.cemu_label)
+        main_layout.addWidget(self.cemu_path_input)
         main_layout.addWidget(self.pick_cemu_button)
 
         main_layout.addWidget(self.game_label)
+        main_layout.addWidget(self.game_path_input)
         main_layout.addWidget(self.region_label)
         main_layout.addWidget(self.game_version_label)
         main_layout.addWidget(self.pick_game_button)
@@ -243,6 +254,28 @@ class BreathMLauncher(QWidget):
         self.save_config()
         self.refresh_labels()
 
+    def save_cemu_path_from_input(self) -> None:
+        path = self.cemu_path_input.text().strip()
+        self.current_profile()["cemu_path"] = path
+        self.save_config()
+        self.refresh_labels()
+
+    def save_game_path_from_input(self) -> None:
+        path = self.game_path_input.text().strip()
+
+        if path and not path.lower().endswith(".wua"):
+            QMessageBox.critical(
+                self,
+                "Invalid File",
+                "BreathM currently only supports .wua files.",
+            )
+            self.game_path_input.setText(self.current_profile().get("game_path", ""))
+            return
+
+        self.current_profile()["game_path"] = path
+        self.save_config()
+        self.refresh_labels()
+
     def pick_cemu(self) -> None:
         if platform.system() == "Windows":
             file_filter = "Cemu executable (Cemu.exe);;Executables (*.exe)"
@@ -295,6 +328,15 @@ class BreathMLauncher(QWidget):
 
         self.cemu_label.setText(self.format_cemu_label())
         self.game_label.setText(self.format_game_label())
+
+        self.cemu_path_input.blockSignals(True)
+        self.cemu_path_input.setText(profile.get("cemu_path", ""))
+        self.cemu_path_input.blockSignals(False)
+
+        self.game_path_input.blockSignals(True)
+        self.game_path_input.setText(profile.get("game_path", ""))
+        self.game_path_input.blockSignals(False)
+
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')}")
         self.game_version_label.setText(
             f"Game Version: {profile.get('game_version', 'Unknown')}"
@@ -354,7 +396,7 @@ class BreathMLauncher(QWidget):
 def main() -> None:
     app = QApplication([])
     window = BreathMLauncher()
-    window.resize(760, 340)
+    window.resize(760, 420)
     window.show()
     app.exec()
 
