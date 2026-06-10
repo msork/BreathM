@@ -23,6 +23,7 @@ type ServerMessage struct {
 	ServerName string   `msgpack:"server_name,omitempty"`
 	Message    string   `msgpack:"message,omitempty"`
 	Players    []string `msgpack:"players,omitempty"`
+	Event	   string   `msgpack:"event,omitempty"`
 }
 
 type Client struct {
@@ -55,6 +56,7 @@ func unregisterClient(client *Client) {
 	if wasRegistered {
 		log.Printf("Player left: %s", client.Username)
 		broadcastPlayerList()
+		broadcastEvent(fmt.Sprintf("%s left", client.Username))
 	}
 }
 
@@ -86,6 +88,22 @@ func broadcastPlayerList() {
 	for client := range clients {
 		if err := client.Encoder.Encode(message); err != nil {
 			log.Printf("Failed to send player list to %s: %v", client.Username, err)
+		}
+	}
+}
+
+func broadcastEvent(event string) {
+	message := ServerMessage{
+		Type:  "event",
+		Event: event,
+	}
+
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for client := range clients {
+		if err := client.Encoder.Encode(message); err != nil {
+			log.Printf("Failed to send event to %s: %v", client.Username, err)
 		}
 	}
 }
@@ -146,6 +164,7 @@ func handleClient(conn net.Conn) {
 			}
 
 			broadcastPlayerList()
+			broadcastEvent(fmt.Sprintf("%s joined", msg.Username))
 		default:
 			log.Printf("Unknown message from %s: %+v", remoteAddr, msg)
 		}

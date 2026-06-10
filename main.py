@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QTextEdit,
 )
 
 APP_NAME = "BreathM"
@@ -116,6 +117,9 @@ class BreathMLauncher(QWidget):
         self.disconnect_button = QPushButton("Disconnect")
         self.connection_status_label = QLabel("Status: Disconnected")
         self.player_list_widget = QListWidget()
+        
+        self.event_log = QTextEdit()
+        self.event_log.setReadOnly(True)
 
         self.connect_button.clicked.connect(self.connect_to_server)
         self.disconnect_button.clicked.connect(self.disconnect_from_server)
@@ -173,6 +177,9 @@ class BreathMLauncher(QWidget):
         main_layout.addWidget(self.connection_status_label)
         main_layout.addWidget(QLabel("Connected Players"))
         main_layout.addWidget(self.player_list_widget)
+        
+        main_layout.addWidget(QLabel("Events"))
+        main_layout.addWidget(self.event_log)
 
         main_layout.addWidget(self.launch_button)
 
@@ -469,11 +476,19 @@ class BreathMLauncher(QWidget):
             players = message.get("players", [])
             self.update_player_list(players)
 
+        elif message_type == "event":
+            event = message.get("event", "")
+            if event:
+                self.add_event(event)
+
     def update_player_list(self, players: list[str]) -> None:
         self.player_list_widget.clear()
 
         for player in players:
             self.player_list_widget.addItem(str(player))
+            
+    def add_event(self, text: str) -> None:
+        self.event_log.append(text)
 
     def disconnect_from_server(self) -> None:
         if self.server_socket is not None:
@@ -487,6 +502,7 @@ class BreathMLauncher(QWidget):
 
         self.player_list_widget.clear()
         self.connection_status_label.setText("Status: Disconnected")
+        self.event_log.clear()
 
     def pick_cemu(self) -> None:
         if platform.system() == "Windows":
