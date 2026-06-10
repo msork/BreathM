@@ -1,3 +1,11 @@
+"""
+BreathM Launcher
+
+Cross-platform launcher for Breath of the Wild on Cemu.
+Supports Linux and Windows.
+Currently expects .wua games only.
+"""
+
 import json
 import platform
 import subprocess
@@ -5,41 +13,46 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
-    QVBoxLayout,
-    QPushButton,
+    QCheckBox,
     QFileDialog,
     QLabel,
     QMessageBox,
-    QCheckBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 APP_NAME = "BreathM"
+FLATPAK_CEMU_ID = "info.cemu.Cemu"
 
 
-def config_path() -> Path:
-    if platform.system() == "Windows":
+def get_config_path() -> Path:
+    """Return the platform-specific BreathM config path."""
+    system = platform.system()
+
+    if system == "Windows":
         return Path.home() / "AppData" / "Roaming" / APP_NAME / "config.json"
 
     return Path.home() / ".config" / APP_NAME / "config.json"
 
 
-CONFIG = config_path()
+CONFIG_PATH = get_config_path()
 
 
 class BreathMLauncher(QWidget):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("BreathM")
 
         self.config = self.load_config()
 
-        layout = QVBoxLayout()
+        self.setWindowTitle(APP_NAME)
+        self.setMinimumWidth(720)
 
         self.title_label = QLabel("BreathM")
         self.os_label = QLabel(f"Detected OS: {platform.system()}")
-        self.cemu_label = QLabel(f"Cemu: {self.config.get('cemu_path', 'not set')}")
-        self.game_label = QLabel(f"BOTW .wua: {self.config.get('game_path', 'not set')}")
+
+        self.cemu_label = QLabel(self.format_cemu_label())
+        self.game_label = QLabel(self.format_game_label())
         self.region_label = QLabel(f"Region: {self.config.get('region', 'Unknown')}")
         self.game_version_label = QLabel(
             f"Game Version: {self.config.get('game_version', 'Unknown')}"
@@ -49,47 +62,77 @@ class BreathMLauncher(QWidget):
         self.flatpak_checkbox.setChecked(self.config.get("use_flatpak", False))
         self.flatpak_checkbox.stateChanged.connect(self.save_flatpak_setting)
 
-        pick_cemu = QPushButton("Pick Cemu executable")
-        pick_game = QPushButton("Pick BOTW .wua")
-        launch = QPushButton("Launch BreathM")
+        self.pick_cemu_button = QPushButton("Pick Cemu executable")
+        self.pick_game_button = QPushButton("Pick BOTW .wua")
+        self.launch_button = QPushButton("Launch BreathM")
 
-        pick_cemu.clicked.connect(self.pick_cemu)
-        pick_game.clicked.connect(self.pick_game)
-        launch.clicked.connect(self.launch_game)
+        self.pick_cemu_button.clicked.connect(self.pick_cemu)
+        self.pick_game_button.clicked.connect(self.pick_game)
+        self.launch_button.clicked.connect(self.launch_game)
 
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.os_label)
-        layout.addWidget(self.flatpak_checkbox)
-        layout.addWidget(self.cemu_label)
-        layout.addWidget(pick_cemu)
-        layout.addWidget(self.game_label)
-        layout.addWidget(self.region_label)
-        layout.addWidget(self.game_version_label)
-        layout.addWidget(pick_game)
-        layout.addWidget(launch)
-
-        self.setLayout(layout)
+        self.build_layout()
 
         if platform.system() != "Linux":
             self.flatpak_checkbox.hide()
 
+    def build_layout(self) -> None:
+        layout = QVBoxLayout()
+
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.os_label)
+
+        layout.addWidget(self.flatpak_checkbox)
+
+        layout.addWidget(self.cemu_label)
+        layout.addWidget(self.pick_cemu_button)
+
+        layout.addWidget(self.game_label)
+        layout.addWidget(self.region_label)
+        layout.addWidget(self.game_version_label)
+        layout.addWidget(self.pick_game_button)
+
+        layout.addWidget(self.launch_button)
+
+        self.setLayout(layout)
+
     def load_config(self) -> dict:
-        if CONFIG.exists():
-            try:
-                return json.loads(CONFIG.read_text())
-            except json.JSONDecodeError:
-                return {}
-        return {}
+        if not CONFIG_PATH.exists():
+            return {}
 
-    def save_config(self):
-        CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG.write_text(json.dumps(self.config, indent=2))
+        try:
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            QMessageBox.warning(
+                self,
+                "Config Error",
+                "Your BreathM config file is corrupted. A new config will be used.",
+            )
+            return {}
 
-    def save_flatpak_setting(self):
+    def save_config(self) -> None:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(
+            json.dumps(self.config, indent=2),
+            encoding="utf-8",
+        )
+
+    def format_cemu_label(self) -> str:
+        cemu_path = self.config.get("cemu_path", "not set")
+
+        if platform.system() == "Linux" and self.config.get("use_flatpak", False):
+            return f"Cemu: Flatpak ({FLATPAK_CEMU_ID})"
+
+        return f"Cemu: {cemu_path}"
+
+    def format_game_label(self) -> str:
+        return f"BOTW .wua: {self.config.get('game_path', 'not set')}"
+
+    def save_flatpak_setting(self) -> None:
         self.config["use_flatpak"] = self.flatpak_checkbox.isChecked()
         self.save_config()
+        self.cemu_label.setText(self.format_cemu_label())
 
-    def pick_cemu(self):
+    def pick_cemu(self) -> None:
         if platform.system() == "Windows":
             file_filter = "Cemu executable (Cemu.exe);;Executables (*.exe)"
         else:
@@ -102,12 +145,14 @@ class BreathMLauncher(QWidget):
             file_filter,
         )
 
-        if path:
-            self.config["cemu_path"] = path
-            self.save_config()
-            self.cemu_label.setText(f"Cemu: {path}")
+        if not path:
+            return
 
-    def pick_game(self):
+        self.config["cemu_path"] = path
+        self.save_config()
+        self.cemu_label.setText(self.format_cemu_label())
+
+    def pick_game(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Select BOTW .wua",
@@ -121,66 +166,79 @@ class BreathMLauncher(QWidget):
         if not path.lower().endswith(".wua"):
             QMessageBox.critical(
                 self,
-                "Invalid file",
-                "BreathM only supports .wua files.",
+                "Invalid File",
+                "BreathM currently only supports .wua files.",
             )
             return
 
         self.config["game_path"] = path
-
-        if "region" not in self.config:
-            self.config["region"] = "Unknown"
-
-        if "game_version" not in self.config:
-            self.config["game_version"] = "Unknown"
+        self.config.setdefault("region", "Unknown")
+        self.config.setdefault("game_version", "Unknown")
 
         self.save_config()
+        self.refresh_labels()
 
-        self.game_label.setText(f"BOTW .wua: {path}")
+    def refresh_labels(self) -> None:
+        self.cemu_label.setText(self.format_cemu_label())
+        self.game_label.setText(self.format_game_label())
         self.region_label.setText(f"Region: {self.config.get('region', 'Unknown')}")
         self.game_version_label.setText(
             f"Game Version: {self.config.get('game_version', 'Unknown')}"
         )
 
-    def launch_game(self):
-        game = self.config.get("game_path")
+    def build_launch_command(self) -> list[str] | None:
+        game_path = self.config.get("game_path")
 
-        if not game:
-            QMessageBox.warning(self, "Missing game", "Pick your BOTW .wua first.")
-            return
+        if not game_path:
+            QMessageBox.warning(self, "Missing Game", "Pick your BOTW .wua first.")
+            return None
 
-        if not game.lower().endswith(".wua"):
+        if not game_path.lower().endswith(".wua"):
             QMessageBox.critical(
                 self,
-                "Invalid game",
-                "BreathM only supports .wua files.",
+                "Invalid Game",
+                "BreathM currently only supports .wua files.",
             )
-            return
+            return None
 
         if platform.system() == "Linux" and self.config.get("use_flatpak", False):
-            cmd = ["flatpak", "run", "info.cemu.Cemu", "-g", game]
-        else:
-            cemu = self.config.get("cemu_path")
+            return ["flatpak", "run", FLATPAK_CEMU_ID, "-g", game_path]
 
-            if not cemu:
-                QMessageBox.warning(
-                    self,
-                    "Missing Cemu",
-                    "Pick your Cemu executable first.",
-                )
-                return
+        cemu_path = self.config.get("cemu_path")
 
-            cmd = [cemu, "-g", game]
+        if not cemu_path:
+            QMessageBox.warning(
+                self,
+                "Missing Cemu",
+                "Pick your Cemu executable first.",
+            )
+            return None
+
+        return [cemu_path, "-g", game_path]
+
+    def launch_game(self) -> None:
+        command = self.build_launch_command()
+
+        if command is None:
+            return
 
         try:
-            subprocess.Popen(cmd)
-        except Exception as e:
-            QMessageBox.critical(self, "Launch failed", str(e))
+            subprocess.Popen(command)
+        except OSError as error:
+            QMessageBox.critical(
+                self,
+                "Launch Failed",
+                f"Could not launch Cemu:\n\n{error}",
+            )
+
+
+def main() -> None:
+    app = QApplication([])
+    window = BreathMLauncher()
+    window.resize(720, 300)
+    window.show()
+    app.exec()
 
 
 if __name__ == "__main__":
-    app = QApplication([])
-    window = BreathMLauncher()
-    window.resize(720, 270)
-    window.show()
-    app.exec()
+    main()

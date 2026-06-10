@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.spec
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+
+# Linux
+.directory
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Qt
+*.qmlc
+*.jsc
+
+# User configs
+config.json
+
+# BreathM local configs
+.config/
+BreathM/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Cemu
+cemu/
+Cemu/
+mlc01/
+
+# Wii U game files
+*.wua
+*.wux
+*.wud
+*.rpx
+
+# Save files
+saves/
+
+# Mods
+mods/
+graphicPacks/
