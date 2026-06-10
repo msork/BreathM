@@ -49,6 +49,8 @@ DEFAULT_CONFIG = {
             "region": "Unknown",
             "game_version": "Unknown",
             "use_flatpak": False,
+            "username": "",
+            "server_address": "127.0.0.1:30120",
         }
     },
 }
@@ -89,6 +91,21 @@ class BreathMLauncher(QWidget):
         self.game_path_input.editingFinished.connect(self.save_game_path_from_input)
         self.region_label = QLabel()
         self.game_version_label = QLabel()
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Username")
+        self.username_input.editingFinished.connect(self.save_multiplayer_settings)
+
+        self.server_address_input = QLineEdit()
+        self.server_address_input.setPlaceholderText("Server address, example: 127.0.0.1:30120")
+        self.server_address_input.editingFinished.connect(self.save_multiplayer_settings)
+
+        self.connect_button = QPushButton("Connect")
+        self.disconnect_button = QPushButton("Disconnect")
+        self.connection_status_label = QLabel("Status: Disconnected")
+
+        self.connect_button.clicked.connect(self.connect_to_server)
+        self.disconnect_button.clicked.connect(self.disconnect_from_server)
 
         self.flatpak_checkbox = QCheckBox("Use Flatpak Cemu on Linux")
         self.flatpak_checkbox.stateChanged.connect(self.save_flatpak_setting)
@@ -132,6 +149,16 @@ class BreathMLauncher(QWidget):
         main_layout.addWidget(self.game_version_label)
         main_layout.addWidget(self.pick_game_button)
 
+        main_layout.addWidget(QLabel("Multiplayer"))
+        main_layout.addWidget(self.username_input)
+        main_layout.addWidget(self.server_address_input)
+
+        multiplayer_button_row = QHBoxLayout()
+        multiplayer_button_row.addWidget(self.connect_button)
+        multiplayer_button_row.addWidget(self.disconnect_button)
+        main_layout.addLayout(multiplayer_button_row)
+        main_layout.addWidget(self.connection_status_label)
+
         main_layout.addWidget(self.launch_button)
 
         self.setLayout(main_layout)
@@ -157,9 +184,22 @@ class BreathMLauncher(QWidget):
             config["profiles"]["Default"]["use_flatpak"] = old_config.get(
                 "use_flatpak", False
             )
+            config["profiles"]["Default"]["username"] = old_config.get("username", "")
+            config["profiles"]["Default"]["server_address"] = old_config.get(
+                "server_address", "127.0.0.1:30120"
+            )
 
         if "active_profile" not in config:
             config["active_profile"] = next(iter(config["profiles"]))
+
+        for profile in config["profiles"].values():
+            profile.setdefault("cemu_path", "")
+            profile.setdefault("game_path", "")
+            profile.setdefault("region", "Unknown")
+            profile.setdefault("game_version", "Unknown")
+            profile.setdefault("use_flatpak", False)
+            profile.setdefault("username", "")
+            profile.setdefault("server_address", "127.0.0.1:30120")
 
         return config
 
@@ -199,6 +239,8 @@ class BreathMLauncher(QWidget):
             "region": "Unknown",
             "game_version": "Unknown",
             "use_flatpak": False,
+            "username": name,
+            "server_address": "127.0.0.1:30120",
         }
 
         self.config["active_profile"] = name
@@ -276,6 +318,38 @@ class BreathMLauncher(QWidget):
         self.save_config()
         self.refresh_labels()
 
+    def save_multiplayer_settings(self) -> None:
+        profile = self.current_profile()
+        profile["username"] = self.username_input.text().strip()
+        profile["server_address"] = self.server_address_input.text().strip()
+        self.save_config()
+
+    def connect_to_server(self) -> None:
+        self.save_multiplayer_settings()
+
+        profile = self.current_profile()
+        username = profile.get("username", "").strip()
+        server_address = profile.get("server_address", "").strip()
+
+        if not username:
+            QMessageBox.warning(self, "Missing Username", "Enter a username first.")
+            return
+
+        if not server_address:
+            QMessageBox.warning(
+                self,
+                "Missing Server",
+                "Enter a server address first. Example: 127.0.0.1:30120",
+            )
+            return
+
+        self.connection_status_label.setText(
+            f"Status: Connected to {server_address} as {username} (UI only)"
+        )
+
+    def disconnect_from_server(self) -> None:
+        self.connection_status_label.setText("Status: Disconnected")
+
     def pick_cemu(self) -> None:
         if platform.system() == "Windows":
             file_filter = "Cemu executable (Cemu.exe);;Executables (*.exe)"
@@ -337,6 +411,16 @@ class BreathMLauncher(QWidget):
         self.game_path_input.setText(profile.get("game_path", ""))
         self.game_path_input.blockSignals(False)
 
+        self.username_input.blockSignals(True)
+        self.username_input.setText(profile.get("username", ""))
+        self.username_input.blockSignals(False)
+
+        self.server_address_input.blockSignals(True)
+        self.server_address_input.setText(profile.get("server_address", "127.0.0.1:30120"))
+        self.server_address_input.blockSignals(False)
+
+        self.connection_status_label.setText("Status: Disconnected")
+
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')}")
         self.game_version_label.setText(
             f"Game Version: {profile.get('game_version', 'Unknown')}"
@@ -396,7 +480,7 @@ class BreathMLauncher(QWidget):
 def main() -> None:
     app = QApplication([])
     window = BreathMLauncher()
-    window.resize(760, 420)
+    window.resize(760, 560)
     window.show()
     app.exec()
 
