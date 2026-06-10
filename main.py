@@ -7,12 +7,18 @@ Currently expects .wua games only.
 """
 
 import json
+import os
 import platform
 import socket
 import subprocess
 from pathlib import Path
 
 import msgpack
+
+try:
+    from pypresence import Presence
+except ImportError:
+    Presence = None
 
 from PySide6.QtCore import QTimer
 
@@ -69,11 +75,21 @@ class BreathMLauncher(QWidget):
 
         self.config = self.load_config()
         self.server_socket: socket.socket | None = None
+        self.game_process: subprocess.Popen | None = None
         self.message_unpacker: msgpack.Unpacker | None = None
+        self.server_name = ""
+        self.presence_status = "launcher"
+        self.discord_rpc = None
+
+        self.setup_discord_rpc()
 
         self.server_poll_timer = QTimer(self)
         self.server_poll_timer.timeout.connect(self.poll_server_messages)
         self.server_poll_timer.start(100)
+        
+        self.game_poll_timer = QTimer(self)
+        self.game_poll_timer.timeout.connect(self.poll_game_process)
+        self.game_poll_timer.start(1000)
 
         self.setWindowTitle(APP_NAME)
         self.setMinimumWidth(760)
@@ -417,7 +433,9 @@ class BreathMLauncher(QWidget):
                 raise OSError("Server sent an unexpected response")
 
             server_name = welcome_message.get("server_name", "Unknown Server")
+            self.server_name = server_name
             self.server_socket.setblocking(False)
+            self.set_presence_status("launcher")
             
         except (OSError, ValueError, msgpack.ExtraData, msgpack.FormatError) as error:
             self.server_socket = None
@@ -468,6 +486,86 @@ class BreathMLauncher(QWidget):
             return
         except OSError:
             self.disconnect_from_server()
+            
+    def poll_game_process(self) -> None:
+        if self.game_process is None:
+            return
+
+        if self.game_process.poll() is None:
+            return
+
+        self.game_process = None
+        self.set_presence_status("launcher")
+
+    def send_server_message(self, message: dict) -> None:
+        if self.server_socket is None:
+            return
+
+        self.server_socket.sendall(msgpack.packb(message, use_bin_type=True))
+
+    def send_status_to_server(self) -> None:
+        self.send_server_message(
+            {
+                "type": "status",
+                "status": self.presence_status,
+            }
+        )
+
+    def set_presence_status(self, status: str) -> None:
+        self.presence_status = status
+
+        if self.server_socket is not None:
+            try:
+                self.send_status_to_server()
+            except OSError:
+                self.disconnect_from_server()
+
+        self.update_discord_presence()
+
+    def setup_discord_rpc(self) -> None:
+        if Presence is None:
+            return
+
+        client_id = os.environ.get("BREATHM_DISCORD_CLIENT_ID")
+        if not client_id:
+            return
+
+        try:
+            self.discord_rpc = Presence(client_id)
+            self.discord_rpc.connect()
+            self.update_discord_presence()
+        except Exception:
+            self.discord_rpc = None
+
+    def update_discord_presence(self) -> None:
+        if self.discord_rpc is None:
+            return
+
+        state = "In Game" if self.presence_status == "in_game" else "In Launcher"
+        details = "Connected to BreathM" if self.server_socket is not None else "Using BreathM Launcher"
+
+        if self.server_name:
+            details = f"Server: {self.server_name}"
+
+        try:
+            self.discord_rpc.update(
+                details=details,
+                state=state,
+                large_text="BreathM",
+            )
+        except Exception:
+            self.discord_rpc = None
+
+    def close_discord_rpc(self) -> None:
+        if self.discord_rpc is None:
+            return
+
+        try:
+            self.discord_rpc.close()
+        except Exception:
+            pass
+
+        self.discord_rpc = None
 
     def handle_server_message(self, message: dict) -> None:
         message_type = message.get("type")
@@ -481,11 +579,17 @@ class BreathMLauncher(QWidget):
             if event:
                 self.add_event(event)
 
-    def update_player_list(self, players: list[str]) -> None:
+    def update_player_list(self, players: list[dict]) -> None:
         self.player_list_widget.clear()
 
         for player in players:
-            self.player_list_widget.addItem(str(player))
+            if isinstance(player, dict):
+                username = str(player.get("username", "Unknown"))
+                status = str(player.get("status", "launcher"))
+                status_text = "In Game" if status == "in_game" else "In Launcher"
+                self.player_list_widget.addItem(f"{username} - {status_text}")
+            else:
+                self.player_list_widget.addItem(str(player))
             
     def add_event(self, text: str) -> None:
         self.event_log.append(text)
@@ -499,8 +603,11 @@ class BreathMLauncher(QWidget):
 
             self.server_socket = None
             self.message_unpacker = None
+            self.server_name = ""
 
         self.player_list_widget.clear()
+        self.presence_status = "launcher"
+        self.update_discord_presence()
         self.connection_status_label.setText("Status: Disconnected")
         self.event_log.clear()
 
@@ -622,7 +729,8 @@ class BreathMLauncher(QWidget):
             return
 
         try:
-            subprocess.Popen(command)
+            self.game_process = subprocess.Popen(command)
+            self.set_presence_status("in_game")
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -632,6 +740,7 @@ class BreathMLauncher(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.disconnect_from_server()
+        self.close_discord_rpc()
         event.accept()
 
 

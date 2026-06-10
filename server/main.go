@@ -16,19 +16,26 @@ const listenAddress = "127.0.0.1:30120"
 type ClientMessage struct {
 	Type     string `msgpack:"type"`
 	Username string `msgpack:"username"`
+	Status   string `msgpack:"status"`
+}
+
+type PlayerInfo struct {
+	Username string `msgpack:"username"`
+	Status   string `msgpack:"status"`
 }
 
 type ServerMessage struct {
-	Type       string   `msgpack:"type"`
-	ServerName string   `msgpack:"server_name,omitempty"`
-	Message    string   `msgpack:"message,omitempty"`
-	Players    []string `msgpack:"players,omitempty"`
-	Event	   string   `msgpack:"event,omitempty"`
+	Type       string       `msgpack:"type"`
+	ServerName string       `msgpack:"server_name,omitempty"`
+	Message    string       `msgpack:"message,omitempty"`
+	Players    []PlayerInfo `msgpack:"players,omitempty"`
+	Event      string       `msgpack:"event,omitempty"`
 }
 
 type Client struct {
 	Conn     net.Conn
 	Username string
+	Status   string
 	Encoder  *msgpack.Encoder
 }
 
@@ -60,23 +67,34 @@ func unregisterClient(client *Client) {
 	}
 }
 
-func connectedPlayerNames() []string {
+func connectedPlayers() []PlayerInfo {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
 
-	players := make([]string, 0, len(clients))
+	players := make([]PlayerInfo, 0, len(clients))
 	for client := range clients {
 		if client.Username != "" {
-			players = append(players, client.Username)
+			status := client.Status
+			if status == "" {
+				status = "launcher"
+			}
+
+			players = append(players, PlayerInfo{
+				Username: client.Username,
+				Status:   status,
+			})
 		}
 	}
 
-	sort.Strings(players)
+	sort.Slice(players, func(i, j int) bool {
+		return players[i].Username < players[j].Username
+	})
+
 	return players
 }
 
 func broadcastPlayerList() {
-	players := connectedPlayerNames()
+	players := connectedPlayers()
 	message := ServerMessage{
 		Type:    "player_list",
 		Players: players,
@@ -108,6 +126,15 @@ func broadcastEvent(event string) {
 	}
 }
 
+func statusDisplayName(status string) string {
+	switch status {
+	case "in_game":
+		return "In Game"
+	default:
+		return "In Launcher"
+	}
+}
+
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 
@@ -116,6 +143,7 @@ func handleClient(conn net.Conn) {
 
 	client := &Client{
 		Conn:    conn,
+		Status:  "launcher",
 		Encoder: msgpack.NewEncoder(conn),
 	}
 
@@ -145,6 +173,7 @@ func handleClient(conn net.Conn) {
 		switch msg.Type {
 		case "hello":
 			client.Username = msg.Username
+			client.Status = "launcher"
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
 
 			if !registered {
@@ -165,6 +194,23 @@ func handleClient(conn net.Conn) {
 
 			broadcastPlayerList()
 			broadcastEvent(fmt.Sprintf("%s joined", msg.Username))
+		case "status":
+			if !registered {
+				log.Printf("Ignoring status from unregistered client %s", remoteAddr)
+				continue
+			}
+
+			if msg.Status != "launcher" && msg.Status != "in_game" {
+				log.Printf("Ignoring invalid status from %s: %s", client.Username, msg.Status)
+				continue
+			}
+
+			if client.Status != msg.Status {
+				client.Status = msg.Status
+				log.Printf("Player status changed: %s -> %s", client.Username, msg.Status)
+				broadcastPlayerList()
+				broadcastEvent(fmt.Sprintf("%s is now %s", client.Username, statusDisplayName(msg.Status)))
+			}
 		default:
 			log.Printf("Unknown message from %s: %+v", remoteAddr, msg)
 		}
