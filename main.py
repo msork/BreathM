@@ -14,6 +14,8 @@ from pathlib import Path
 
 import msgpack
 
+from PySide6.QtCore import QTimer
+
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -23,6 +25,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -65,6 +68,11 @@ class BreathMLauncher(QWidget):
 
         self.config = self.load_config()
         self.server_socket: socket.socket | None = None
+        self.message_unpacker: msgpack.Unpacker | None = None
+
+        self.server_poll_timer = QTimer(self)
+        self.server_poll_timer.timeout.connect(self.poll_server_messages)
+        self.server_poll_timer.start(100)
 
         self.setWindowTitle(APP_NAME)
         self.setMinimumWidth(760)
@@ -107,6 +115,7 @@ class BreathMLauncher(QWidget):
         self.connect_button = QPushButton("Connect")
         self.disconnect_button = QPushButton("Disconnect")
         self.connection_status_label = QLabel("Status: Disconnected")
+        self.player_list_widget = QListWidget()
 
         self.connect_button.clicked.connect(self.connect_to_server)
         self.disconnect_button.clicked.connect(self.disconnect_from_server)
@@ -162,6 +171,8 @@ class BreathMLauncher(QWidget):
         multiplayer_button_row.addWidget(self.disconnect_button)
         main_layout.addLayout(multiplayer_button_row)
         main_layout.addWidget(self.connection_status_label)
+        main_layout.addWidget(QLabel("Connected Players"))
+        main_layout.addWidget(self.player_list_widget)
 
         main_layout.addWidget(self.launch_button)
 
@@ -390,29 +401,16 @@ class BreathMLauncher(QWidget):
                 "type": "hello",
                 "username": username,
             }
+            self.message_unpacker = msgpack.Unpacker(raw=False, max_map_len=64)
             self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
-            
-            unpacker = msgpack.Unpacker(raw=False, max_map_len=32)
-            
-            while True:
-                chunk = self.server_socket.recv(4096)
 
-                if not chunk:
-                    raise OSError("Server disconnected before sending welcome message")
-
-                unpacker.feed(chunk)
-
-                for welcome_message in unpacker:
-                    break
-                else:
-                    continue
-
-                break
+            welcome_message = self.read_next_server_message()
 
             if welcome_message.get("type") != "welcome":
                 raise OSError("Server sent an unexpected response")
 
             server_name = welcome_message.get("server_name", "Unknown Server")
+            self.server_socket.setblocking(False)
             
         except (OSError, ValueError, msgpack.ExtraData, msgpack.FormatError) as error:
             self.server_socket = None
@@ -428,6 +426,55 @@ class BreathMLauncher(QWidget):
             f"Status: Connected to {server_name} as {username}"
         )
 
+    def read_next_server_message(self) -> dict:
+        if self.server_socket is None or self.message_unpacker is None:
+            raise OSError("Not connected to server")
+
+        while True:
+            chunk = self.server_socket.recv(4096)
+
+            if not chunk:
+                raise OSError("Server disconnected before sending message")
+
+            self.message_unpacker.feed(chunk)
+
+            for message in self.message_unpacker:
+                return message
+
+    def poll_server_messages(self) -> None:
+        if self.server_socket is None or self.message_unpacker is None:
+            return
+
+        try:
+            while True:
+                chunk = self.server_socket.recv(4096)
+
+                if not chunk:
+                    self.disconnect_from_server()
+                    return
+
+                self.message_unpacker.feed(chunk)
+
+                for message in self.message_unpacker:
+                    self.handle_server_message(message)
+        except BlockingIOError:
+            return
+        except OSError:
+            self.disconnect_from_server()
+
+    def handle_server_message(self, message: dict) -> None:
+        message_type = message.get("type")
+
+        if message_type == "player_list":
+            players = message.get("players", [])
+            self.update_player_list(players)
+
+    def update_player_list(self, players: list[str]) -> None:
+        self.player_list_widget.clear()
+
+        for player in players:
+            self.player_list_widget.addItem(str(player))
+
     def disconnect_from_server(self) -> None:
         if self.server_socket is not None:
             try:
@@ -436,7 +483,9 @@ class BreathMLauncher(QWidget):
                 pass
 
             self.server_socket = None
+            self.message_unpacker = None
 
+        self.player_list_widget.clear()
         self.connection_status_label.setText("Status: Disconnected")
 
     def pick_cemu(self) -> None:
@@ -573,7 +622,7 @@ class BreathMLauncher(QWidget):
 def main() -> None:
     app = QApplication([])
     window = BreathMLauncher()
-    window.resize(760, 560)
+    window.resize(760, 680)
     window.show()
     app.exec()
 

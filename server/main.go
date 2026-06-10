@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"sort"
+	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -17,9 +19,75 @@ type ClientMessage struct {
 }
 
 type ServerMessage struct {
-	Type       string `msgpack:"type"`
-	ServerName string `msgpack:"server_name"`
-	Message    string `msgpack:"message"`
+	Type       string   `msgpack:"type"`
+	ServerName string   `msgpack:"server_name,omitempty"`
+	Message    string   `msgpack:"message,omitempty"`
+	Players    []string `msgpack:"players,omitempty"`
+}
+
+type Client struct {
+	Conn     net.Conn
+	Username string
+	Encoder  *msgpack.Encoder
+}
+
+var (
+	clients      = make(map[*Client]bool)
+	clientsMutex sync.Mutex
+)
+
+func registerClient(client *Client) {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	clients[client] = true
+	log.Printf("Connected players: %d", len(clients))
+}
+
+func unregisterClient(client *Client) {
+	clientsMutex.Lock()
+	wasRegistered := clients[client]
+	if wasRegistered {
+		delete(clients, client)
+	}
+	clientsMutex.Unlock()
+
+	if wasRegistered {
+		log.Printf("Player left: %s", client.Username)
+		broadcastPlayerList()
+	}
+}
+
+func connectedPlayerNames() []string {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	players := make([]string, 0, len(clients))
+	for client := range clients {
+		if client.Username != "" {
+			players = append(players, client.Username)
+		}
+	}
+
+	sort.Strings(players)
+	return players
+}
+
+func broadcastPlayerList() {
+	players := connectedPlayerNames()
+	message := ServerMessage{
+		Type:    "player_list",
+		Players: players,
+	}
+
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for client := range clients {
+		if err := client.Encoder.Encode(message); err != nil {
+			log.Printf("Failed to send player list to %s: %v", client.Username, err)
+		}
+	}
 }
 
 func handleClient(conn net.Conn) {
@@ -28,7 +96,20 @@ func handleClient(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("Client connected: %s", remoteAddr)
 
+	client := &Client{
+		Conn:    conn,
+		Encoder: msgpack.NewEncoder(conn),
+	}
+
 	decoder := msgpack.NewDecoder(conn)
+	registered := false
+
+	defer func() {
+		if registered {
+			unregisterClient(client)
+		}
+		log.Printf("Client disconnected: %s", remoteAddr)
+	}()
 
 	for {
 		var msg ClientMessage
@@ -36,7 +117,6 @@ func handleClient(conn net.Conn) {
 		err := decoder.Decode(&msg)
 		if err != nil {
 			if err == io.EOF {
-				log.Printf("Client disconnected: %s", remoteAddr)
 				return
 			}
 
@@ -46,7 +126,13 @@ func handleClient(conn net.Conn) {
 
 		switch msg.Type {
 		case "hello":
+			client.Username = msg.Username
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
+
+			if !registered {
+				registerClient(client)
+				registered = true
+			}
 
 			welcome := ServerMessage{
 				Type:       "welcome",
@@ -54,10 +140,12 @@ func handleClient(conn net.Conn) {
 				Message:    "Welcome to BreathM",
 			}
 
-			if err := msgpack.NewEncoder(conn).Encode(welcome); err != nil {
+			if err := client.Encoder.Encode(welcome); err != nil {
 				log.Printf("Failed to send welcome to %s: %v", remoteAddr, err)
 				return
 			}
+
+			broadcastPlayerList()
 		default:
 			log.Printf("Unknown message from %s: %+v", remoteAddr, msg)
 		}
