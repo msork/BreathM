@@ -391,7 +391,30 @@ class BreathMLauncher(QWidget):
                 "username": username,
             }
             self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
-        except OSError as error:
+            
+            unpacker = msgpack.Unpacker(raw=False, max_map_len=32)
+            
+            while True:
+                chunk = self.server_socket.recv(4096)
+
+                if not chunk:
+                    raise OSError("Server disconnected before sending welcome message")
+
+                unpacker.feed(chunk)
+
+                for welcome_message in unpacker:
+                    break
+                else:
+                    continue
+
+                break
+
+            if welcome_message.get("type") != "welcome":
+                raise OSError("Server sent an unexpected response")
+
+            server_name = welcome_message.get("server_name", "Unknown Server")
+            
+        except (OSError, ValueError, msgpack.ExtraData, msgpack.FormatError) as error:
             self.server_socket = None
             QMessageBox.critical(
                 self,
@@ -402,7 +425,7 @@ class BreathMLauncher(QWidget):
             return
 
         self.connection_status_label.setText(
-            f"Status: Connected to {server_address} as {username}"
+            f"Status: Connected to {server_name} as {username}"
         )
 
     def disconnect_from_server(self) -> None:

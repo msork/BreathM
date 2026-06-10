@@ -16,6 +16,12 @@ type ClientMessage struct {
 	Username string `msgpack:"username"`
 }
 
+type ServerMessage struct {
+	Type       string `msgpack:"type"`
+	ServerName string `msgpack:"server_name"`
+	Message    string `msgpack:"message"`
+}
+
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 
@@ -41,6 +47,17 @@ func handleClient(conn net.Conn) {
 		switch msg.Type {
 		case "hello":
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
+
+			welcome := ServerMessage{
+				Type:       "welcome",
+				ServerName: "BreathM Development Server",
+				Message:    "Welcome to BreathM",
+			}
+
+			if err := msgpack.NewEncoder(conn).Encode(welcome); err != nil {
+				log.Printf("Failed to send welcome to %s: %v", remoteAddr, err)
+				return
+			}
 		default:
 			log.Printf("Unknown message from %s: %+v", remoteAddr, msg)
 		}
