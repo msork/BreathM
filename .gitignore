@@ -54,6 +54,12 @@ BreathM/
 *.bak
 *.swp
 
+# Go
+server/server
+server/*.exe
+server/*.test
+server/coverage.out
+
 # Cemu
 cemu/
 Cemu/

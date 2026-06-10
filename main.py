@@ -8,8 +8,11 @@ Currently expects .wua games only.
 
 import json
 import platform
+import socket
 import subprocess
 from pathlib import Path
+
+import msgpack
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -61,6 +64,7 @@ class BreathMLauncher(QWidget):
         super().__init__()
 
         self.config = self.load_config()
+        self.server_socket: socket.socket | None = None
 
         self.setWindowTitle(APP_NAME)
         self.setMinimumWidth(760)
@@ -324,6 +328,34 @@ class BreathMLauncher(QWidget):
         profile["server_address"] = self.server_address_input.text().strip()
         self.save_config()
 
+    def parse_server_address(self, server_address: str) -> tuple[str, int] | None:
+        if ":" not in server_address:
+            QMessageBox.warning(
+                self,
+                "Invalid Server",
+                "Server address must look like this: 127.0.0.1:30120",
+            )
+            return None
+
+        host, port_text = server_address.rsplit(":", 1)
+        host = host.strip()
+
+        try:
+            port = int(port_text.strip())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Server", "Server port must be a number.")
+            return None
+
+        if not host or port <= 0 or port > 65535:
+            QMessageBox.warning(
+                self,
+                "Invalid Server",
+                "Server address must look like this: 127.0.0.1:30120",
+            )
+            return None
+
+        return host, port
+
     def connect_to_server(self) -> None:
         self.save_multiplayer_settings()
 
@@ -343,11 +375,45 @@ class BreathMLauncher(QWidget):
             )
             return
 
+        parsed_address = self.parse_server_address(server_address)
+        if parsed_address is None:
+            return
+
+        if self.server_socket is not None:
+            self.disconnect_from_server()
+
+        host, port = parsed_address
+
+        try:
+            self.server_socket = socket.create_connection((host, port), timeout=5)
+            hello_message = {
+                "type": "hello",
+                "username": username,
+            }
+            self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
+        except OSError as error:
+            self.server_socket = None
+            QMessageBox.critical(
+                self,
+                "Connection Failed",
+                f"Could not connect to BreathM server:\n\n{error}",
+            )
+            self.connection_status_label.setText("Status: Disconnected")
+            return
+
         self.connection_status_label.setText(
-            f"Status: Connected to {server_address} as {username} (UI only)"
+            f"Status: Connected to {server_address} as {username}"
         )
 
     def disconnect_from_server(self) -> None:
+        if self.server_socket is not None:
+            try:
+                self.server_socket.close()
+            except OSError:
+                pass
+
+            self.server_socket = None
+
         self.connection_status_label.setText("Status: Disconnected")
 
     def pick_cemu(self) -> None:
@@ -475,6 +541,10 @@ class BreathMLauncher(QWidget):
                 "Launch Failed",
                 f"Could not launch Cemu:\n\n{error}",
             )
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.disconnect_from_server()
+        event.accept()
 
 
 def main() -> None:
