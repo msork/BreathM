@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 
 APP_NAME = "BreathM"
 FLATPAK_CEMU_ID = "info.cemu.Cemu"
+DISCORD_CLIENT_ID = "1514412498814763088"
 
 
 def get_config_path() -> Path:
@@ -526,7 +527,10 @@ class BreathMLauncher(QWidget):
         if Presence is None:
             return
 
-        client_id = os.environ.get("BREATHM_DISCORD_CLIENT_ID")
+        client_id = os.environ.get(
+            "BREATHM_DISCORD_CLIENT_ID",
+            DISCORD_CLIENT_ID,
+        )
         if not client_id:
             return
 
@@ -534,7 +538,8 @@ class BreathMLauncher(QWidget):
             self.discord_rpc = Presence(client_id)
             self.discord_rpc.connect()
             self.update_discord_presence()
-        except Exception:
+        except Exception as error:
+            print(f"Discord RPC failed: {error}")
             self.discord_rpc = None
 
     def update_discord_presence(self) -> None:
@@ -553,7 +558,8 @@ class BreathMLauncher(QWidget):
                 state=state,
                 large_text="BreathM",
             )
-        except Exception:
+        except Exception as error:
+            print(f"Discord RPC update failed: {error}")
             self.discord_rpc = None
 
     def close_discord_rpc(self) -> None:
