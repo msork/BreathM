@@ -29,9 +29,9 @@ Each profile stores:
 * Server address
 * Cemu path
 * BOTW path
-* Flatpak preference
 * Region information
 * Game version information
+* Flatpak preference
 
 ## Multiplayer
 
@@ -43,6 +43,7 @@ Each profile stores:
 * Live player list
 * Join notifications
 * Leave notifications
+* Event log
 
 ## Presence
 
@@ -57,7 +58,7 @@ Each profile stores:
 
 # Current Status
 
-BreathM is currently between **Alpha 0.4 Networking** and **Alpha 0.5 Presence**.
+BreathM is currently around **Alpha 0.5 Preview**.
 
 Completed:
 
@@ -66,10 +67,11 @@ Completed:
 * Multiplayer UI
 * Dedicated server prototype
 * MessagePack networking
-* Player synchronization
+* Player list
 * Event log
 * Presence system
 * Discord Rich Presence
+* Protocol version checking
 
 No gameplay synchronization exists yet.
 
@@ -120,22 +122,6 @@ github.com/vmihailenco/msgpack/v5
 
 ---
 
-# Running the Launcher
-
-Linux:
-
-```bash
-python3 main.py
-```
-
-Windows:
-
-```powershell
-python main.py
-```
-
----
-
 # Running the Server
 
 From the repository root:
@@ -153,13 +139,29 @@ BreathM server listening on 127.0.0.1:30120
 
 ---
 
+# Running the Launcher
+
+Linux:
+
+```bash
+python3 main.py
+```
+
+Windows:
+
+```powershell
+python main.py
+```
+
+---
+
 # Connecting
 
 Example:
 
 ```text
 Username: Maxim
-Server Address: 127.0.0.1:30120
+Server: 127.0.0.1:30120
 ```
 
 Click:
@@ -180,7 +182,7 @@ The server will:
 
 # Discord Rich Presence
 
-BreathM supports Discord Rich Presence.
+BreathM supports Discord Rich Presence through `pypresence`.
 
 Displayed information includes:
 
@@ -188,11 +190,7 @@ Displayed information includes:
 * In-game status
 * Connected player count
 
-Default application:
-
-```text
-BreathM
-```
+If Discord is unavailable, BreathM will continue running and retry later.
 
 ---
 
@@ -262,11 +260,7 @@ In Progress
 * In-game status
 * Discord Rich Presence
 * Connected player count
-
-Remaining:
-
-* Additional status information
-* Improved server information
+* Protocol version checks
 
 ## Alpha 0.6+ — Cemu Integration Research
 
@@ -298,6 +292,7 @@ Players should use the same:
 * BOTW update version
 * BOTW DLC version
 * Mod set
+* BreathM protocol version
 
 Future versions may include:
 

@@ -11,6 +11,8 @@ import os
 import platform
 import socket
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import msgpack
@@ -42,7 +44,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "BreathM"
 FLATPAK_CEMU_ID = "info.cemu.Cemu"
 DISCORD_CLIENT_ID = "1514412498814763088"
-
+PROTOCOL_VERSION = "alpha-0.5"
 
 def get_config_path() -> Path:
     if platform.system() == "Windows":
@@ -83,7 +85,7 @@ class BreathMLauncher(QWidget):
         self.presence_status = "launcher"
         self.discord_rpc = None
 
-        self.setup_discord_rpc()
+        self.last_discord_attempt = 0
 
         self.server_poll_timer = QTimer(self)
         self.server_poll_timer.timeout.connect(self.poll_server_messages)
@@ -425,11 +427,15 @@ class BreathMLauncher(QWidget):
             hello_message = {
                 "type": "hello",
                 "username": username,
+                "protocol_version": PROTOCOL_VERSION,
             }
             self.message_unpacker = msgpack.Unpacker(raw=False, max_map_len=64)
             self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
 
             welcome_message = self.read_next_server_message()
+
+            if welcome_message.get("type") == "error":
+                raise OSError(welcome_message.get("message", "Server rejected connection"))
 
             if welcome_message.get("type") != "welcome":
                 raise OSError("Server sent an unexpected response")
@@ -450,8 +456,10 @@ class BreathMLauncher(QWidget):
             return
 
         self.connection_status_label.setText(
-            f"Status: Connected to {server_name} as {username}"
+            f"Status: Connected to {server_name} as {username} ({PROTOCOL_VERSION})"
         )
+        
+        self.force_discord_reconnect()
 
     def read_next_server_message(self) -> dict:
         if self.server_socket is None or self.message_unpacker is None:
@@ -525,6 +533,9 @@ class BreathMLauncher(QWidget):
         self.update_discord_presence()
 
     def setup_discord_rpc(self) -> None:
+        if self.discord_rpc is not None:
+            return
+
         if Presence is None:
             return
 
@@ -532,19 +543,37 @@ class BreathMLauncher(QWidget):
             "BREATHM_DISCORD_CLIENT_ID",
             DISCORD_CLIENT_ID,
         )
+
         if not client_id:
             return
 
         try:
-            self.discord_rpc = Presence(client_id)
-            self.discord_rpc.connect()
-            self.update_discord_presence()
+            print("Discord RPC connecting...")
+
+            rpc = Presence(client_id)
+            rpc.connect()
+
+            self.discord_rpc = rpc
+
+            print("Discord RPC connected")
+
         except Exception as error:
-            print(f"Discord RPC failed: {error}")
-            self.discord_rpc = None
+            print(f"Discord RPC unavailable: {error}")
+            return
+
+        self.update_discord_presence()
 
     def update_discord_presence(self) -> None:
         if self.discord_rpc is None:
+            now = time.time()
+
+            if now - self.last_discord_attempt > 30:
+                self.last_discord_attempt = now
+                threading.Thread(
+                    target=self.setup_discord_rpc,
+                    daemon=True,
+                ).start()
+
             return
 
         state = "In Game" if self.presence_status == "in_game" else "In Launcher"
@@ -563,6 +592,12 @@ class BreathMLauncher(QWidget):
             )
         except Exception as error:
             print(f"Discord RPC update failed: {error}")
+
+            try:
+                self.discord_rpc.close()
+            except Exception:
+                pass
+
             self.discord_rpc = None
 
     def close_discord_rpc(self) -> None:
@@ -575,6 +610,10 @@ class BreathMLauncher(QWidget):
             pass
 
         self.discord_rpc = None
+        
+    def force_discord_reconnect(self) -> None:
+        self.last_discord_attempt = 0
+        self.update_discord_presence()
 
     def handle_server_message(self, message: dict) -> None:
         message_type = message.get("type")
@@ -743,6 +782,7 @@ class BreathMLauncher(QWidget):
         try:
             self.game_process = subprocess.Popen(command)
             self.set_presence_status("in_game")
+            self.force_discord_reconnect()
         except OSError as error:
             QMessageBox.critical(
                 self,

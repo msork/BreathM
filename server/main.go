@@ -12,11 +12,13 @@ import (
 )
 
 const listenAddress = "127.0.0.1:30120"
+const protocolVersion = "alpha-0.5"
 
 type ClientMessage struct {
 	Type     string `msgpack:"type"`
 	Username string `msgpack:"username"`
 	Status   string `msgpack:"status"`
+	ProtocolVersion string `msgpack:"protocol_version"`
 }
 
 type PlayerInfo struct {
@@ -30,6 +32,7 @@ type ServerMessage struct {
 	Message    string       `msgpack:"message,omitempty"`
 	Players    []PlayerInfo `msgpack:"players,omitempty"`
 	Event      string       `msgpack:"event,omitempty"`
+	ProtocolVersion string `msgpack:"protocol_version,omitempty"`
 }
 
 type Client struct {
@@ -176,6 +179,19 @@ func handleClient(conn net.Conn) {
 			client.Status = "launcher"
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
 
+			if msg.ProtocolVersion != protocolVersion {
+				log.Printf("Rejected %s: incompatible protocol %s", remoteAddr, msg.ProtocolVersion)
+
+				reject := ServerMessage{
+					Type:            "error",
+					Message:         "Incompatible BreathM protocol version",
+					ProtocolVersion: protocolVersion,
+				}
+
+				_ = client.Encoder.Encode(reject)
+				return
+			}
+
 			if !registered {
 				registerClient(client)
 				registered = true
@@ -185,6 +201,7 @@ func handleClient(conn net.Conn) {
 				Type:       "welcome",
 				ServerName: "BreathM Development Server",
 				Message:    "Welcome to BreathM",
+				ProtocolVersion: protocolVersion,
 			}
 
 			if err := client.Encoder.Encode(welcome); err != nil {
