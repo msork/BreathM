@@ -1,4 +1,4 @@
-# BreathM
+# <img src="assets/icon.png" width="2.5%" alt="BreathM Icon"> - BreathM
 
 BreathM is a cross-platform multiplayer framework and launcher for **The Legend of Zelda: Breath of the Wild** on **Cemu**.
 
