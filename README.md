@@ -2,50 +2,93 @@
 
 BreathM is a cross-platform multiplayer framework and launcher for **The Legend of Zelda: Breath of the Wild** on **Cemu**.
 
-It is inspired by FiveM and RedM. The long-term goal is a true multiplayer platform for BOTW, not just a launcher.
+Inspired by FiveM and RedM, the long-term goal is to create a true multiplayer platform for BOTW rather than a simple launcher.
 
-> Early alpha software. Use at your own risk.
+> Early alpha software. Expect bugs and breaking changes.
 
-## Current Status
+---
 
-BreathM is currently in early alpha.
+# Features
 
-### Launcher
+## Launcher
 
-- Linux support
-- Windows support
-- Cemu launcher support
-- Flatpak Cemu support on Linux
-- BOTW `.wua` support only
-- Manual path entry for systems where file pickers/desktop portals break
-- Config persistence
-- Profiles
-- Per-profile Cemu path
-- Per-profile game path
-- Per-profile username
-- Per-profile server address
+* Linux support
+* Windows support
+* Native Cemu support
+* Flatpak Cemu support on Linux
+* BOTW `.wua` support
+* Manual path entry support
+* Configuration persistence
+* Multi-profile support
 
-### Multiplayer / Networking
+## Profiles
 
-- Basic multiplayer UI
-- Go dedicated server prototype
-- TCP server listening on `127.0.0.1:30120`
-- MessagePack-based hello packet from launcher to server
-- Server logs player join and disconnect events
+Each profile stores:
+
+* Username
+* Server address
+* Cemu path
+* BOTW path
+* Flatpak preference
+* Region information
+* Game version information
+
+## Multiplayer
+
+* Dedicated Go server
+* TCP networking
+* MessagePack protocol
+* Username system
+* Connect / Disconnect
+* Live player list
+* Join notifications
+* Leave notifications
+
+## Presence
+
+* Launcher status
+* In-game status
+* Automatic game close detection
+* Live status synchronization
+* Discord Rich Presence support
+* Connected player count in Discord
+
+---
+
+# Current Status
+
+BreathM is currently between **Alpha 0.4 Networking** and **Alpha 0.5 Presence**.
+
+Completed:
+
+* Launcher
+* Profiles
+* Multiplayer UI
+* Dedicated server prototype
+* MessagePack networking
+* Player synchronization
+* Event log
+* Presence system
+* Discord Rich Presence
 
 No gameplay synchronization exists yet.
 
-## Requirements
+---
 
-### Launcher
+# Requirements
 
-- Python 3.11+
-- PySide6
-- msgpack
-- Cemu 2.x
-- BOTW in `.wua` format
+## Launcher
 
-Install Python dependencies:
+* Python 3.11+
+* PySide6
+* msgpack
+* pypresence
+* Cemu 2.x
+* BOTW `.wua`
+
+Install dependencies:
+
+### Linux
 
 ```bash
 python3 -m venv .venv
@@ -53,7 +96,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On Windows:
+### Windows
 
 ```powershell
 py -m venv .venv
@@ -61,27 +104,39 @@ py -m venv .venv
 pip install -r requirements.txt
 ```
 
-### Server
+---
 
-- Go 1.24+
+## Server
 
-Server dependency:
+Requirements:
 
-- `github.com/vmihailenco/msgpack/v5`
+* Go 1.24+
 
-## Running the Launcher
+Dependency:
+
+```text
+github.com/vmihailenco/msgpack/v5
+```
+
+---
+
+# Running the Launcher
+
+Linux:
 
 ```bash
 python3 main.py
 ```
 
-On Windows:
+Windows:
 
 ```powershell
 python main.py
 ```
 
-## Running the Server
+---
+
+# Running the Server
 
 From the repository root:
 
@@ -96,18 +151,52 @@ Expected output:
 BreathM server listening on 127.0.0.1:30120
 ```
 
-Then open the launcher, enter:
+---
+
+# Connecting
+
+Example:
 
 ```text
 Username: Maxim
-Server: 127.0.0.1:30120
+Server Address: 127.0.0.1:30120
 ```
 
-Click **Connect**.
+Click:
 
-The server should log the player joining.
+```text
+Connect
+```
 
-## Repository Structure
+The server will:
+
+* Register the player
+* Broadcast player lists
+* Broadcast join events
+* Broadcast leave events
+* Synchronize player status
+
+---
+
+# Discord Rich Presence
+
+BreathM supports Discord Rich Presence.
+
+Displayed information includes:
+
+* Launcher status
+* In-game status
+* Connected player count
+
+Default application:
+
+```text
+BreathM
+```
+
+---
+
+# Repository Structure
 
 ```text
 BreathM/
@@ -121,81 +210,105 @@ BreathM/
     └── main.go
 ```
 
-## Roadmap
+---
 
-### Alpha 0.1 - Launcher
+# Roadmap
 
-Completed:
+## Alpha 0.1 — Launcher
 
-- Launch BOTW from BreathM
-- Linux support
-- Windows support
-- Config persistence
-- `.wua` support
+Completed
 
-### Alpha 0.2 - Profiles
+* Launch BOTW from BreathM
+* Linux support
+* Windows support
+* Config persistence
+* `.wua` support
 
-Completed:
+## Alpha 0.2 — Profiles
 
-- Create profile
-- Delete profile
-- Switch profile
-- Per-profile game paths
-- Per-profile Cemu paths
+Completed
 
-### Alpha 0.3 - Multiplayer UI
+* Create profile
+* Delete profile
+* Switch profile
+* Per-profile game paths
+* Per-profile Cemu paths
 
-Completed:
+## Alpha 0.3 — Multiplayer UI
 
-- Username field
-- Server address field
-- Connect button
-- Disconnect button
-- Connection status
+Completed
 
-### Alpha 0.4 - Networking
+* Username field
+* Server address field
+* Connect button
+* Disconnect button
+* Connection status
 
-In progress:
+## Alpha 0.4 — Networking
 
-- Dedicated BreathM server
-- Client/server protocol
-- Join notifications
-- Leave notifications
-- Player list
+Completed
 
-### Alpha 0.5 - Presence System
+* Dedicated server
+* MessagePack protocol
+* Join notifications
+* Leave notifications
+* Live player list
 
-Planned:
+## Alpha 0.5 — Presence
 
-- Detect BOTW running
-- Detect player connected
-- Share basic status information
+In Progress
 
-### Alpha 0.6+ - Cemu Integration Research
+* Launcher status
+* In-game status
+* Discord Rich Presence
+* Connected player count
 
-Planned:
+Remaining:
 
-- Cemu process interaction
-- Memory reading
-- Coordinate extraction
-- Cross-platform memory abstraction
+* Additional status information
+* Improved server information
 
-### Alpha 1.0 - Real Multiplayer
+## Alpha 0.6+ — Cemu Integration Research
 
-Planned:
+Planned
 
-- Shared player positions
-- Ghost players
-- Co-op synchronization
-- Dedicated servers
+* Cemu process interaction
+* Memory reading
+* Coordinate extraction
+* Cross-platform abstraction
 
-## Compatibility Notes
+## Alpha 1.0 — Real Multiplayer
 
-Current versions should prioritize players having the same:
+Planned
 
-- BOTW region
-- Game update version
-- DLC version
-- Mod set
+* Shared player positions
+* Ghost players
+* Co-op synchronization
+* Dedicated servers
 
-Cross-region and cross-version compatibility may be researched later.
+---
+
+# Compatibility Goals
+
+Current expectation:
+
+Players should use the same:
+
+* BOTW region
+* BOTW update version
+* BOTW DLC version
+* Mod set
+
+Future versions may include:
+
+* Version checking
+* Compatibility warnings
+* Mod synchronization
+* Cross-version support research
+
+---
+
+# License
+
+License information will be added in a future release.
+
