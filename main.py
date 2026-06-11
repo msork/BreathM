@@ -79,6 +79,7 @@ class BreathMLauncher(QWidget):
         self.config = self.load_config()
         self.server_socket: socket.socket | None = None
         self.game_process: subprocess.Popen | None = None
+        self.detected_cemu_status = "Not running"
         self.message_unpacker: msgpack.Unpacker | None = None
         self.pending_server_messages: list[dict] = []
         self.server_name = ""
@@ -151,6 +152,7 @@ class BreathMLauncher(QWidget):
         )
         
         self.game_version_label = QLabel()
+        self.cemu_status_label = QLabel("Cemu Status: Not running")
 
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Username")
@@ -218,6 +220,7 @@ class BreathMLauncher(QWidget):
 
         main_layout.addWidget(self.region_label)
         main_layout.addWidget(self.game_version_label)
+        main_layout.addWidget(self.cemu_status_label)
         
         main_layout.addWidget(self.pick_game_button)
 
@@ -606,6 +609,8 @@ class BreathMLauncher(QWidget):
             self.disconnect_from_server()
             
     def poll_game_process(self) -> None:
+        self.update_detected_cemu_status()
+
         if self.game_process is None:
             return
 
@@ -614,6 +619,40 @@ class BreathMLauncher(QWidget):
 
         self.game_process = None
         self.set_presence_status("launcher")
+        
+    def update_detected_cemu_status(self) -> None:
+        if self.game_process is not None and self.game_process.poll() is None:
+            status = "BOTW likely running"
+        elif self.is_cemu_process_running():
+            status = "Cemu running"
+        else:
+            status = "Not running"
+
+        if status == self.detected_cemu_status:
+            return
+
+        self.detected_cemu_status = status
+        self.cemu_status_label.setText(f"Cemu Status: {status}")
+
+    def is_cemu_process_running(self) -> bool:
+        if platform.system() == "Windows":
+            command = ["tasklist"]
+        else:
+            command = ["ps", "-A", "-o", "comm="]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+        except OSError:
+            return False
+
+        output = result.stdout.lower()
+        return "cemu" in output
 
     def send_server_message(self, message: dict) -> None:
         if self.server_socket is None:
@@ -941,9 +980,23 @@ class BreathMLauncher(QWidget):
             )
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        self.disconnect_from_server()
-        self.close_discord_rpc()
-        event.accept()
+        try:
+            self.server_poll_timer.stop()
+            self.game_poll_timer.stop()
+
+            if self.server_socket is not None:
+                try:
+                    self.server_socket.close()
+                except OSError:
+                    pass
+
+                self.server_socket = None
+                self.message_unpacker = None
+                self.pending_server_messages.clear()
+
+            self.close_discord_rpc()
+        finally:
+            event.accept()
 
 
 def main() -> None:
