@@ -82,6 +82,7 @@ class BreathMLauncher(QWidget):
         self.message_unpacker: msgpack.Unpacker | None = None
         self.server_name = ""
         self.connected_player_count = 0
+        self.has_received_player_list = False
         self.presence_status = "launcher"
         self.discord_rpc = None
 
@@ -609,7 +610,7 @@ class BreathMLauncher(QWidget):
         if self.discord_rpc is None:
             now = time.time()
 
-            if now - self.last_discord_attempt > 30:
+            if now - self.last_discord_attempt > 5:
                 self.last_discord_attempt = now
                 threading.Thread(
                     target=self.setup_discord_rpc,
@@ -621,8 +622,11 @@ class BreathMLauncher(QWidget):
         state = "In Game" if self.presence_status == "in_game" else "In Launcher"
 
         if self.server_socket is not None:
-            player_word = "player" if self.connected_player_count == 1 else "players"
-            details = f"{self.connected_player_count} {player_word} connected"
+            if not self.has_received_player_list:
+                details = "Connecting to server"
+            else:
+                player_word = "player" if self.connected_player_count == 1 else "players"
+                details = f"{self.connected_player_count} {player_word} connected"
         else:
             details = "Using BreathM Launcher"
 
@@ -668,9 +672,16 @@ class BreathMLauncher(QWidget):
             event = message.get("event", "")
             if event:
                 self.add_event(event)
+                
+        elif message_type == "warning":
+            warning = message.get("warning", "")
+            if warning:
+                self.add_event(f"WARNING: {warning}")
+                QMessageBox.warning(self, "Compatibility Warning", warning)
 
     def update_player_list(self, players: list[dict]) -> None:
         self.connected_player_count = len(players)
+        self.has_received_player_list = True
         self.update_discord_presence()
         
         self.player_list_widget.clear()
@@ -703,6 +714,9 @@ class BreathMLauncher(QWidget):
             self.server_name = ""
 
         self.player_list_widget.clear()
+        self.has_received_player_list = False
+        self.connected_player_count = 0
+        
         self.presence_status = "launcher"
         self.update_discord_presence()
         self.connection_status_label.setText("Status: Disconnected")

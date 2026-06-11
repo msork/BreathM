@@ -77,3 +77,6 @@ saves/
 # Mods
 mods/
 graphicPacks/
+
+# Environment
+.env

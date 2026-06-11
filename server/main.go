@@ -37,6 +37,7 @@ type ServerMessage struct {
 	Players    []PlayerInfo `msgpack:"players,omitempty"`
 	Event      string       `msgpack:"event,omitempty"`
 	ProtocolVersion string `msgpack:"protocol_version,omitempty"`
+	Warning string `msgpack:"warning,omitempty"`
 }
 
 type Client struct {
@@ -52,6 +53,19 @@ var (
 	clients      = make(map[*Client]bool)
 	clientsMutex sync.Mutex
 )
+
+func firstKnownRegion() string {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for client := range clients {
+		if client.Region != "" && client.Region != "Unknown" {
+			return client.Region
+		}
+	}
+
+	return ""
+}
 
 func registerClient(client *Client) {
 	clientsMutex.Lock()
@@ -200,6 +214,20 @@ func handleClient(conn net.Conn) {
 
 				_ = client.Encoder.Encode(reject)
 				return
+			}
+			
+			serverRegion := firstKnownRegion()
+
+			if serverRegion != "" && msg.Region != "" && msg.Region != "Unknown" && msg.Region != serverRegion {
+				warning := ServerMessage{
+					Type:    "warning",
+					Warning: fmt.Sprintf("Region mismatch: server is using %s, you are using %s", serverRegion, msg.Region),
+				}
+
+				if err := client.Encoder.Encode(warning); err != nil {
+					log.Printf("Failed to send region warning to %s: %v", remoteAddr, err)
+					return
+				}
 			}
 
 			if !registered {
