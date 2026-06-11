@@ -45,6 +45,9 @@ type Client struct {
 	Username string
 	Status   string
 	Encoder  *msgpack.Encoder
+	
+	WriteMutex sync.Mutex
+	
 	Region      string
 	GameVersion string
 }
@@ -129,7 +132,11 @@ func broadcastPlayerList() {
 	defer clientsMutex.Unlock()
 
 	for client := range clients {
-		if err := client.Encoder.Encode(message); err != nil {
+		client.WriteMutex.Lock()
+		err := client.Encoder.Encode(message)
+		client.WriteMutex.Unlock()
+
+		if err != nil {
 			log.Printf("Failed to send player list to %s: %v", client.Username, err)
 		}
 	}
@@ -145,7 +152,11 @@ func broadcastEvent(event string) {
 	defer clientsMutex.Unlock()
 
 	for client := range clients {
-		if err := client.Encoder.Encode(message); err != nil {
+		client.WriteMutex.Lock()
+		err := client.Encoder.Encode(message)
+		client.WriteMutex.Unlock()
+
+		if err != nil {
 			log.Printf("Failed to send event to %s: %v", client.Username, err)
 		}
 	}
@@ -212,22 +223,36 @@ func handleClient(conn net.Conn) {
 					ProtocolVersion: protocolVersion,
 				}
 
-				_ = client.Encoder.Encode(reject)
+				client.WriteMutex.Lock()
+				err := client.Encoder.Encode(reject)
+				client.WriteMutex.Unlock()
+
+				if err != nil {
+					log.Printf("Failed to send protocol rejection to %s: %v", remoteAddr, err)
+				}
+
 				return
 			}
 			
 			serverRegion := firstKnownRegion()
 
 			if serverRegion != "" && msg.Region != "" && msg.Region != "Unknown" && msg.Region != serverRegion {
-				warning := ServerMessage{
-					Type:    "warning",
-					Warning: fmt.Sprintf("Region mismatch: server is using %s, you are using %s", serverRegion, msg.Region),
+				log.Printf("Rejected %s: region mismatch server=%s client=%s", remoteAddr, serverRegion, msg.Region)
+
+				reject := ServerMessage{
+					Type:    "error",
+					Message: fmt.Sprintf("Region mismatch. Server region is %s, but you are using %s.", serverRegion, msg.Region),
 				}
 
-				if err := client.Encoder.Encode(warning); err != nil {
-					log.Printf("Failed to send region warning to %s: %v", remoteAddr, err)
-					return
+				client.WriteMutex.Lock()
+				err := client.Encoder.Encode(reject)
+				client.WriteMutex.Unlock()
+
+				if err != nil {
+					log.Printf("Failed to send region rejection to %s: %v", remoteAddr, err)
 				}
+
+				return
 			}
 
 			if !registered {
@@ -242,7 +267,11 @@ func handleClient(conn net.Conn) {
 				ProtocolVersion: protocolVersion,
 			}
 
-			if err := client.Encoder.Encode(welcome); err != nil {
+			client.WriteMutex.Lock()
+			err := client.Encoder.Encode(welcome)
+			client.WriteMutex.Unlock()
+
+			if err != nil {
 				log.Printf("Failed to send welcome to %s: %v", remoteAddr, err)
 				return
 			}

@@ -254,21 +254,36 @@ Completed
 
 ## Alpha 0.5 — Presence
 
-In Progress
+Completed
 
 * Launcher status
 * In-game status
 * Discord Rich Presence
 * Connected player count
 * Protocol version checks
+* Region compatibility checks
+* Multiplayer presence synchronization
 
-## Alpha 0.6+ — Cemu Integration Research
+## Alpha 0.6 — Networking & Compatibility Polish
+
+Completed
+
+* Live player list
+* Join notifications
+* Leave notifications
+* Event log
+* Protocol validation
+* Region validation
+* Discord Rich Presence synchronization
+* Multi-instance Discord handling
+
+## Alpha 0.7 — Cemu Integration Research
 
 Planned
 
 * Cemu process interaction
-* Memory reading
-* Coordinate extraction
+* Memory reading research
+* Coordinate extraction research
 * Cross-platform abstraction
 
 ## Alpha 1.0 — Real Multiplayer
