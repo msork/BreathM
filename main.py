@@ -395,6 +395,41 @@ class BreathMLauncher(QWidget):
         self.current_profile()["cemu_path"] = path
         self.save_config()
         self.refresh_labels()
+        
+    def auto_detect_game_info(self, game_path: str) -> tuple[str, str]:
+        text = Path(game_path).name.lower()
+
+        region = "Unknown"
+        game_version = "Unknown"
+
+        if any(token in text for token in ["usa", "us", "american"]):
+            region = "US"
+        elif any(token in text for token in ["europe", "eur", "eu"]):
+            region = "Europe"
+        elif any(token in text for token in ["japan", "jpn", "jp"]):
+            region = "Japan"
+
+        version_markers = ["v", "version", "update"]
+
+        for marker in version_markers:
+            marker_index = text.find(marker)
+            if marker_index == -1:
+                continue
+
+            after_marker = text[marker_index + len(marker):]
+            digits = ""
+
+            for char in after_marker:
+                if char.isdigit():
+                    digits += char
+                elif digits:
+                    break
+
+            if digits:
+                game_version = digits
+                break
+
+        return region, game_version
 
     def save_game_path_from_input(self) -> None:
         path = self.game_path_input.text().strip()
@@ -408,7 +443,17 @@ class BreathMLauncher(QWidget):
             self.game_path_input.setText(self.current_profile().get("game_path", ""))
             return
 
-        self.current_profile()["game_path"] = path
+        profile = self.current_profile()
+        profile["game_path"] = path
+
+        region, game_version = self.auto_detect_game_info(path)
+
+        if region != "Unknown":
+            profile["region"] = region
+
+        if game_version != "Unknown":
+            profile["game_version"] = game_version
+
         self.save_config()
         self.refresh_labels()
 
@@ -887,8 +932,18 @@ class BreathMLauncher(QWidget):
 
         profile = self.current_profile()
         profile["game_path"] = path
-        profile.setdefault("region", "Unknown")
-        profile.setdefault("game_version", "Unknown")
+
+        region, game_version = self.auto_detect_game_info(path)
+
+        if region != "Unknown":
+            profile["region"] = region
+        else:
+            profile.setdefault("region", "Unknown")
+
+        if game_version != "Unknown":
+            profile["game_version"] = game_version
+        else:
+            profile.setdefault("game_version", "Unknown")
 
         self.save_config()
         self.refresh_labels()
