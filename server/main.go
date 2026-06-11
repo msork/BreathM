@@ -19,11 +19,15 @@ type ClientMessage struct {
 	Username string `msgpack:"username"`
 	Status   string `msgpack:"status"`
 	ProtocolVersion string `msgpack:"protocol_version"`
+	Region      string `msgpack:"region"`
+	GameVersion string `msgpack:"game_version"`
 }
 
 type PlayerInfo struct {
 	Username string `msgpack:"username"`
 	Status   string `msgpack:"status"`
+	Region      string `msgpack:"region"`
+	GameVersion string `msgpack:"game_version"`
 }
 
 type ServerMessage struct {
@@ -40,6 +44,8 @@ type Client struct {
 	Username string
 	Status   string
 	Encoder  *msgpack.Encoder
+	Region      string
+	GameVersion string
 }
 
 var (
@@ -83,8 +89,10 @@ func connectedPlayers() []PlayerInfo {
 			}
 
 			players = append(players, PlayerInfo{
-				Username: client.Username,
-				Status:   status,
+				Username:    client.Username,
+				Status:      status,
+				Region:      client.Region,
+				GameVersion: client.GameVersion,
 			})
 		}
 	}
@@ -177,6 +185,8 @@ func handleClient(conn net.Conn) {
 		case "hello":
 			client.Username = msg.Username
 			client.Status = "launcher"
+			client.Region = msg.Region
+			client.GameVersion = msg.GameVersion
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
 
 			if msg.ProtocolVersion != protocolVersion {

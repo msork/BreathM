@@ -122,7 +122,27 @@ class BreathMLauncher(QWidget):
         self.game_path_input = QLineEdit()
         self.game_path_input.setPlaceholderText("Paste BOTW .wua path here")
         self.game_path_input.editingFinished.connect(self.save_game_path_from_input)
+        
+        
+        self.region_box = QComboBox()
+        self.region_box.addItems(
+            [
+                "Unknown",
+                "US",
+                "Europe",
+                "Japan",
+            ]
+        )
+        self.region_box.currentTextChanged.connect(self.save_region_settings)
+
         self.region_label = QLabel()
+        
+        self.game_version_input = QLineEdit()
+        self.game_version_input.setPlaceholderText("BOTW version (example: 208)")
+        self.game_version_input.editingFinished.connect(
+            self.save_region_settings
+        )
+        
         self.game_version_label = QLabel()
 
         self.username_input = QLineEdit()
@@ -182,8 +202,16 @@ class BreathMLauncher(QWidget):
 
         main_layout.addWidget(self.game_label)
         main_layout.addWidget(self.game_path_input)
+        
+        main_layout.addWidget(QLabel("Region"))
+        main_layout.addWidget(self.region_box)
+
+        main_layout.addWidget(QLabel("Game Version"))
+        main_layout.addWidget(self.game_version_input)
+
         main_layout.addWidget(self.region_label)
         main_layout.addWidget(self.game_version_label)
+        
         main_layout.addWidget(self.pick_game_button)
 
         main_layout.addWidget(QLabel("Multiplayer"))
@@ -248,6 +276,18 @@ class BreathMLauncher(QWidget):
     def save_config(self) -> None:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+        
+    def save_region_settings(self) -> None:
+        profile = self.current_profile()
+
+        profile["region"] = self.region_box.currentText()
+        profile["game_version"] = (
+            self.game_version_input.text().strip()
+            or "Unknown"
+        )
+
+        self.save_config()
+        self.refresh_labels()
 
     def current_profile_name(self) -> str:
         return self.config["active_profile"]
@@ -428,6 +468,8 @@ class BreathMLauncher(QWidget):
                 "type": "hello",
                 "username": username,
                 "protocol_version": PROTOCOL_VERSION,
+                "region": profile.get("region", "Unknown"),
+                "game_version": profile.get("game_version", "Unknown"),
             }
             self.message_unpacker = msgpack.Unpacker(raw=False, max_map_len=64)
             self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
@@ -638,7 +680,11 @@ class BreathMLauncher(QWidget):
                 username = str(player.get("username", "Unknown"))
                 status = str(player.get("status", "launcher"))
                 status_text = "In Game" if status == "in_game" else "In Launcher"
-                self.player_list_widget.addItem(f"{username} - {status_text}")
+                region = str(player.get("region", "Unknown"))
+                game_version = str(player.get("game_version", "Unknown"))
+                self.player_list_widget.addItem(
+                    f"{username} - {status_text} - {region} - v{game_version}"
+                )
             else:
                 self.player_list_widget.addItem(str(player))
             
@@ -732,6 +778,18 @@ class BreathMLauncher(QWidget):
         self.server_address_input.blockSignals(False)
 
         self.connection_status_label.setText("Status: Disconnected")
+        
+        self.region_box.blockSignals(True)
+        self.region_box.setCurrentText(
+            profile.get("region", "Unknown")
+        )
+        self.region_box.blockSignals(False)
+
+        self.game_version_input.blockSignals(True)
+        self.game_version_input.setText(
+            profile.get("game_version", "")
+        )
+        self.game_version_input.blockSignals(False)
 
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')}")
         self.game_version_label.setText(
