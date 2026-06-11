@@ -165,6 +165,7 @@ class BreathMLauncher(QWidget):
         self.connect_button = QPushButton("Connect")
         self.disconnect_button = QPushButton("Disconnect")
         self.connection_status_label = QLabel("Status: Disconnected")
+        self.server_info_label = QLabel("Server: Not connected")
         self.player_list_widget = QListWidget()
         
         self.event_log = QTextEdit()
@@ -233,6 +234,7 @@ class BreathMLauncher(QWidget):
         multiplayer_button_row.addWidget(self.disconnect_button)
         main_layout.addLayout(multiplayer_button_row)
         main_layout.addWidget(self.connection_status_label)
+        main_layout.addWidget(self.server_info_label)
         main_layout.addWidget(QLabel("Connected Players"))
         main_layout.addWidget(self.player_list_widget)
         
@@ -561,6 +563,10 @@ class BreathMLauncher(QWidget):
             f"Status: Connected to {server_name} as {username} ({PROTOCOL_VERSION})"
         )
         
+        self.server_info_label.setText(
+            f"Server: {server_name} | Protocol: {PROTOCOL_VERSION}"
+        )
+        
         self.force_discord_update()
 
     def read_next_server_message(self) -> dict:
@@ -837,6 +843,7 @@ class BreathMLauncher(QWidget):
         self.presence_status = "launcher"
         self.update_discord_presence()
         self.connection_status_label.setText("Status: Disconnected")
+        self.server_info_label.setText("Server: Not connected")
         self.event_log.clear()
 
     def pick_cemu(self) -> None:
@@ -909,6 +916,7 @@ class BreathMLauncher(QWidget):
         self.server_address_input.blockSignals(False)
 
         self.connection_status_label.setText("Status: Disconnected")
+        self.server_info_label.setText("Server: Not connected")
         
         self.region_box.blockSignals(True)
         self.region_box.setCurrentText(
