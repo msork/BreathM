@@ -82,6 +82,8 @@ DEFAULT_CONFIG = {
             "region": "Unknown",
             "game_version": "Unknown",
             "dlc_version": "Unknown",
+            "game_file_size": 0,
+            "game_file_mtime": 0.0,
             "use_flatpak": False,
             "username": "",
             "server_address": "127.0.0.1:30120",
@@ -298,6 +300,8 @@ class BreathMLauncher(QWidget):
             profile.setdefault("region", "Unknown")
             profile.setdefault("game_version", "Unknown")
             profile.setdefault("dlc_version", "Unknown")
+            profile.setdefault("game_file_size", 0)
+            profile.setdefault("game_file_mtime", 0.0)
             profile.setdefault("use_flatpak", False)
             profile.setdefault("username", "")
             profile.setdefault("server_address", "127.0.0.1:30120")
@@ -415,7 +419,49 @@ class BreathMLauncher(QWidget):
         self.current_profile()["cemu_path"] = path
         self.save_config()
         self.refresh_labels()
-        
+
+    def get_game_file_signature(self, game_path: str) -> tuple[int, float] | None:
+        try:
+            stat = Path(game_path).stat()
+        except OSError:
+            return None
+
+        return stat.st_size, stat.st_mtime
+
+    def cached_game_detection_is_valid(self, profile: dict, game_path: str) -> bool:
+        signature = self.get_game_file_signature(game_path)
+
+        if signature is None:
+            return False
+
+        file_size, file_mtime = signature
+
+        return (
+            profile.get("game_path") == game_path
+            and profile.get("game_file_size") == file_size
+            and profile.get("game_file_mtime") == file_mtime
+            and profile.get("region", "Unknown") != "Unknown"
+            and profile.get("game_version", "Unknown") != "Unknown"
+        )
+
+    def save_game_detection(
+        self,
+        profile: dict,
+        game_path: str,
+        region: str,
+        game_version: str,
+        dlc_version: str,
+    ) -> None:
+        profile["game_path"] = game_path
+
+        signature = self.get_game_file_signature(game_path)
+        if signature is not None:
+            profile["game_file_size"], profile["game_file_mtime"] = signature
+
+        profile["region"] = region
+        profile["game_version"] = game_version
+        profile["dlc_version"] = dlc_version
+
     def auto_detect_game_info(self, game_path: str) -> tuple[str, str, str]:
         region = "Unknown"
         game_version = "Unknown"
@@ -502,7 +548,10 @@ class BreathMLauncher(QWidget):
     def save_game_path_from_input(self) -> None:
         path = self.game_path_input.text().strip()
 
-        if path and not path.lower().endswith(".wua"):
+        if not path:
+            return
+
+        if not path.lower().endswith(".wua"):
             QMessageBox.critical(
                 self,
                 "Invalid File",
@@ -512,19 +561,13 @@ class BreathMLauncher(QWidget):
             return
 
         profile = self.current_profile()
-        profile["game_path"] = path
+
+        if self.cached_game_detection_is_valid(profile, path):
+            self.refresh_labels()
+            return
 
         region, game_version, dlc_version = self.auto_detect_game_info(path)
-
-        if region != "Unknown":
-            profile["region"] = region
-
-        if game_version != "Unknown":
-            profile["game_version"] = game_version
-            
-        if dlc_version != "Unknown":
-            profile["dlc_version"] = dlc_version
-
+        self.save_game_detection(profile, path, region, game_version, dlc_version)
         self.save_config()
         self.refresh_labels()
 
@@ -620,6 +663,7 @@ class BreathMLauncher(QWidget):
                 "protocol_version": PROTOCOL_VERSION,
                 "region": profile.get("region", "Unknown"),
                 "game_version": profile.get("game_version", "Unknown"),
+                "dlc_version": profile.get("dlc_version", "Unknown"),
             }
             self.message_unpacker = msgpack.Unpacker(raw=False, max_map_len=64)
             self.server_socket.sendall(msgpack.packb(hello_message, use_bin_type=True))
@@ -1002,27 +1046,35 @@ class BreathMLauncher(QWidget):
             return
 
         profile = self.current_profile()
-        profile["game_path"] = path
+
+        self.launch_button.setEnabled(False)
+        self.pick_game_button.setEnabled(False)
+        self.region_label.setText("Region: Reading game metadata...")
+        self.game_version_label.setText("Game Version: Reading game metadata...")
+        self.dlc_version_label.setText("DLC Version: Reading game metadata...")
+        QApplication.processEvents()
+
+        if self.cached_game_detection_is_valid(profile, path):
+            self.refresh_labels()
+            self.launch_button.setEnabled(True)
+            self.pick_game_button.setEnabled(True)
+            return
 
         region, game_version, dlc_version = self.auto_detect_game_info(path)
 
-        if region != "Unknown":
-            profile["region"] = region
-        else:
-            profile.setdefault("region", "Unknown")
-
-        if game_version != "Unknown":
-            profile["game_version"] = game_version
-        else:
-            profile.setdefault("game_version", "Unknown")
-            
-        if dlc_version != "Unknown":
-            profile["dlc_version"] = dlc_version
-        else:
-            profile.setdefault("dlc_version", "Unknown")
+        self.save_game_detection(
+            profile,
+            path,
+            region,
+            game_version,
+            dlc_version,
+        )
 
         self.save_config()
         self.refresh_labels()
+
+        self.launch_button.setEnabled(True)
+        self.pick_game_button.setEnabled(True)
 
     def refresh_labels(self) -> None:
         profile = self.current_profile()
@@ -1061,13 +1113,12 @@ class BreathMLauncher(QWidget):
         )
         self.game_version_input.blockSignals(False)
 
-        self.region_label.setText(f"Region: {profile.get('region', 'Unknown')}")
+        self.region_label.setText(f"Region: {profile.get('region', 'Unknown')} ✓")
         self.game_version_label.setText(
-            f"Game Version: {profile.get('game_version', 'Unknown')}"
+            f"Game Version: v{profile.get('game_version', 'Unknown')} ✓"
         )
-        
         self.dlc_version_label.setText(
-            f"DLC Version: {profile.get('dlc_version', 'Unknown')}"
+            f"DLC Version: v{profile.get('dlc_version', 'Unknown')} ✓"
         )
 
         self.flatpak_checkbox.blockSignals(True)

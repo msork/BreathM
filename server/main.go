@@ -21,6 +21,7 @@ type ClientMessage struct {
 	ProtocolVersion string `msgpack:"protocol_version"`
 	Region      string `msgpack:"region"`
 	GameVersion string `msgpack:"game_version"`
+	DLCVersion      string `msgpack:"dlc_version"`
 }
 
 type PlayerInfo struct {
@@ -28,6 +29,7 @@ type PlayerInfo struct {
 	Status   string `msgpack:"status"`
 	Region      string `msgpack:"region"`
 	GameVersion string `msgpack:"game_version"`
+	DLCVersion  string `msgpack:"dlc_version"`
 }
 
 type ServerMessage struct {
@@ -50,6 +52,7 @@ type Client struct {
 	
 	Region      string
 	GameVersion string
+	DLCVersion string
 }
 
 var (
@@ -110,6 +113,7 @@ func connectedPlayers() []PlayerInfo {
 				Status:      status,
 				Region:      client.Region,
 				GameVersion: client.GameVersion,
+				DLCVersion: client.DLCVersion,
 			})
 		}
 	}
@@ -212,6 +216,7 @@ func handleClient(conn net.Conn) {
 			client.Status = "launcher"
 			client.Region = msg.Region
 			client.GameVersion = msg.GameVersion
+			client.DLCVersion = msg.DLCVersion
 			log.Printf("Player joined: %s from %s", msg.Username, remoteAddr)
 
 			if msg.ProtocolVersion != protocolVersion {
