@@ -8,13 +8,13 @@ DISCORD_CLIENT_ID = "1514412498814763088"
 PROTOCOL_VERSION = "alpha-0.6"
 BOTW_TITLE_IDS = {
     "00050000101c9300": ("Japan", "base"),
-    "00050000101c9400": ("US", "base"),
+    "00050000101c9400": ("USA", "base"),
     "00050000101c9500": ("Europe", "base"),
     "0005000e101c9300": ("Japan", "update"),
-    "0005000e101c9400": ("US", "update"),
+    "0005000e101c9400": ("USA", "update"),
     "0005000e101c9500": ("Europe", "update"),
     "0005000c101c9300": ("Japan", "dlc"),
-    "0005000c101c9400": ("US", "dlc"),
+    "0005000c101c9400": ("USA", "dlc"),
     "0005000c101c9500": ("Europe", "dlc"),
 }
 
