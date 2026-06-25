@@ -9,6 +9,7 @@ Currently expects .wua games only.
 import json
 import os
 import platform
+import re
 import socket
 import subprocess
 import threading
@@ -45,6 +46,22 @@ APP_NAME = "BreathM"
 FLATPAK_CEMU_ID = "info.cemu.Cemu"
 DISCORD_CLIENT_ID = "1514412498814763088"
 PROTOCOL_VERSION = "alpha-0.5"
+BOTW_TITLE_IDS = {
+    "00050000101c9300": ("Japan", "base"),
+    "00050000101c9400": ("US", "base"),
+    "00050000101c9500": ("Europe", "base"),
+    "0005000e101c9300": ("Japan", "update"),
+    "0005000e101c9400": ("US", "update"),
+    "0005000e101c9500": ("Europe", "update"),
+    "0005000c101c9300": ("Japan", "dlc"),
+    "0005000c101c9400": ("US", "dlc"),
+    "0005000c101c9500": ("Europe", "dlc"),
+}
+
+WUA_TITLE_FOLDER_RE = re.compile(
+    rb"(0005000[0ce][0-9a-fA-F]{8})_v([0-9]{1,6})"
+)
+WUA_SCAN_LIMIT_BYTES = 1024 * 1024 * 64
 
 def get_config_path() -> Path:
     if platform.system() == "Windows":
@@ -64,6 +81,7 @@ DEFAULT_CONFIG = {
             "game_path": "",
             "region": "Unknown",
             "game_version": "Unknown",
+            "dlc_version": "Unknown",
             "use_flatpak": False,
             "username": "",
             "server_address": "127.0.0.1:30120",
@@ -152,6 +170,8 @@ class BreathMLauncher(QWidget):
         )
         
         self.game_version_label = QLabel()
+        self.dlc_version_label = QLabel()
+        
         self.cemu_status_label = QLabel("Cemu Status: Not running")
 
         self.username_input = QLineEdit()
@@ -211,16 +231,11 @@ class BreathMLauncher(QWidget):
         main_layout.addWidget(self.pick_cemu_button)
 
         main_layout.addWidget(self.game_label)
-        main_layout.addWidget(self.game_path_input)
-        
-        main_layout.addWidget(QLabel("Region"))
-        main_layout.addWidget(self.region_box)
-
-        main_layout.addWidget(QLabel("Game Version"))
-        main_layout.addWidget(self.game_version_input)
-
         main_layout.addWidget(self.region_label)
+ 
         main_layout.addWidget(self.game_version_label)
+        main_layout.addWidget(self.dlc_version_label)
+        
         main_layout.addWidget(self.cemu_status_label)
         
         main_layout.addWidget(self.pick_game_button)
@@ -263,6 +278,9 @@ class BreathMLauncher(QWidget):
             config["profiles"]["Default"]["game_version"] = old_config.get(
                 "game_version", "Unknown"
             )
+            config["profiles"]["Default"]["dlc_version"] = old_config.get(
+                "dlc_version", "Unknown"
+            )
             config["profiles"]["Default"]["use_flatpak"] = old_config.get(
                 "use_flatpak", False
             )
@@ -279,6 +297,7 @@ class BreathMLauncher(QWidget):
             profile.setdefault("game_path", "")
             profile.setdefault("region", "Unknown")
             profile.setdefault("game_version", "Unknown")
+            profile.setdefault("dlc_version", "Unknown")
             profile.setdefault("use_flatpak", False)
             profile.setdefault("username", "")
             profile.setdefault("server_address", "127.0.0.1:30120")
@@ -332,6 +351,7 @@ class BreathMLauncher(QWidget):
             "game_path": "",
             "region": "Unknown",
             "game_version": "Unknown",
+            "dlc_version": "Unknown",
             "use_flatpak": False,
             "username": name,
             "server_address": "127.0.0.1:30120",
@@ -396,7 +416,55 @@ class BreathMLauncher(QWidget):
         self.save_config()
         self.refresh_labels()
         
-    def auto_detect_game_info(self, game_path: str) -> tuple[str, str]:
+    def auto_detect_game_info(self, game_path: str) -> tuple[str, str, str]:
+        region = "Unknown"
+        game_version = "Unknown"
+        dlc_version = "Unknown"
+
+        detected_titles = self.scan_wua_title_folders(game_path)
+
+        for title_id, version in detected_titles:
+            title_info = BOTW_TITLE_IDS.get(title_id.lower())
+
+            if title_info is None:
+                continue
+
+            detected_region, title_type = title_info
+
+            if region == "Unknown":
+                region = detected_region
+
+            if title_type == "update":
+                game_version = version
+            elif title_type == "dlc":
+                dlc_version = version
+
+        if region != "Unknown" or game_version != "Unknown" or dlc_version != "Unknown":
+            return region, game_version, dlc_version
+
+        fallback_region, fallback_game_version = self.detect_game_info_from_filename(game_path)
+        return fallback_region, fallback_game_version, "Unknown"
+
+    def scan_wua_title_folders(self, game_path: str) -> list[tuple[str, str]]:
+        titles: list[tuple[str, str]] = []
+
+        try:
+            with open(game_path, "rb") as file:
+                data = file.read(WUA_SCAN_LIMIT_BYTES)
+        except OSError:
+            return []
+
+        for match in WUA_TITLE_FOLDER_RE.finditer(data):
+            title_id = match.group(1).decode("ascii").lower()
+            version = match.group(2).decode("ascii")
+
+            entry = (title_id, version)
+            if entry not in titles:
+                titles.append(entry)
+
+        return titles
+
+    def detect_game_info_from_filename(self, game_path: str) -> tuple[str, str]:
         text = Path(game_path).name.lower()
 
         region = "Unknown"
@@ -446,13 +514,16 @@ class BreathMLauncher(QWidget):
         profile = self.current_profile()
         profile["game_path"] = path
 
-        region, game_version = self.auto_detect_game_info(path)
+        region, game_version, dlc_version = self.auto_detect_game_info(path)
 
         if region != "Unknown":
             profile["region"] = region
 
         if game_version != "Unknown":
             profile["game_version"] = game_version
+            
+        if dlc_version != "Unknown":
+            profile["dlc_version"] = dlc_version
 
         self.save_config()
         self.refresh_labels()
@@ -933,7 +1004,7 @@ class BreathMLauncher(QWidget):
         profile = self.current_profile()
         profile["game_path"] = path
 
-        region, game_version = self.auto_detect_game_info(path)
+        region, game_version, dlc_version = self.auto_detect_game_info(path)
 
         if region != "Unknown":
             profile["region"] = region
@@ -944,6 +1015,11 @@ class BreathMLauncher(QWidget):
             profile["game_version"] = game_version
         else:
             profile.setdefault("game_version", "Unknown")
+            
+        if dlc_version != "Unknown":
+            profile["dlc_version"] = dlc_version
+        else:
+            profile.setdefault("dlc_version", "Unknown")
 
         self.save_config()
         self.refresh_labels()
@@ -988,6 +1064,10 @@ class BreathMLauncher(QWidget):
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')}")
         self.game_version_label.setText(
             f"Game Version: {profile.get('game_version', 'Unknown')}"
+        )
+        
+        self.dlc_version_label.setText(
+            f"DLC Version: {profile.get('dlc_version', 'Unknown')}"
         )
 
         self.flatpak_checkbox.blockSignals(True)
