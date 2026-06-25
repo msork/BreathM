@@ -6,7 +6,6 @@ Supports Linux and Windows.
 Currently expects .wua games only.
 """
 
-import json
 import os
 import platform
 import socket
@@ -22,9 +21,7 @@ from breathm.config import (
     PROTOCOL_VERSION,
     BOTW_TITLE_IDS,
     WUA_TITLE_FOLDER_RE,
-    WUA_SCAN_LIMIT_BYTES,
     CONFIG_PATH,
-    DEFAULT_CONFIG,
 )
 from breathm.profiles import load_config, save_config
 
