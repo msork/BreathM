@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "BreathM"
 FLATPAK_CEMU_ID = "info.cemu.Cemu"
 DISCORD_CLIENT_ID = "1514412498814763088"
-PROTOCOL_VERSION = "alpha-0.5"
+PROTOCOL_VERSION = "alpha-0.6"
 BOTW_TITLE_IDS = {
     "00050000101c9300": ("Japan", "base"),
     "00050000101c9400": ("US", "base"),
@@ -61,7 +61,7 @@ BOTW_TITLE_IDS = {
 WUA_TITLE_FOLDER_RE = re.compile(
     rb"(0005000[0ce][0-9a-fA-F]{8})_v([0-9]{1,6})"
 )
-WUA_SCAN_LIMIT_BYTES = 1024 * 1024 * 64
+WUA_SCAN_LIMIT_BYTES = 1024 * 1024 * 512
 
 def get_config_path() -> Path:
     if platform.system() == "Windows":
@@ -151,25 +151,7 @@ class BreathMLauncher(QWidget):
         self.game_path_input.setPlaceholderText("Paste BOTW .wua path here")
         self.game_path_input.editingFinished.connect(self.save_game_path_from_input)
         
-        
-        self.region_box = QComboBox()
-        self.region_box.addItems(
-            [
-                "Unknown",
-                "US",
-                "Europe",
-                "Japan",
-            ]
-        )
-        self.region_box.currentTextChanged.connect(self.save_region_settings)
-
         self.region_label = QLabel()
-        
-        self.game_version_input = QLineEdit()
-        self.game_version_input.setPlaceholderText("BOTW version (example: 208)")
-        self.game_version_input.editingFinished.connect(
-            self.save_region_settings
-        )
         
         self.game_version_label = QLabel()
         self.dlc_version_label = QLabel()
@@ -208,6 +190,7 @@ class BreathMLauncher(QWidget):
         self.launch_button.clicked.connect(self.launch_game)
 
         self.build_layout()
+        self.refresh_game_detection_if_needed()
         self.refresh_labels()
 
         if platform.system() != "Linux":
@@ -311,18 +294,6 @@ class BreathMLauncher(QWidget):
     def save_config(self) -> None:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
-        
-    def save_region_settings(self) -> None:
-        profile = self.current_profile()
-
-        profile["region"] = self.region_box.currentText()
-        profile["game_version"] = (
-            self.game_version_input.text().strip()
-            or "Unknown"
-        )
-
-        self.save_config()
-        self.refresh_labels()
 
     def current_profile_name(self) -> str:
         return self.config["active_profile"]
@@ -336,6 +307,7 @@ class BreathMLauncher(QWidget):
 
         self.config["active_profile"] = profile_name
         self.save_config()
+        self.refresh_game_detection_if_needed()
         self.refresh_labels()
 
     def new_profile(self) -> None:
@@ -442,7 +414,22 @@ class BreathMLauncher(QWidget):
             and profile.get("game_file_mtime") == file_mtime
             and profile.get("region", "Unknown") != "Unknown"
             and profile.get("game_version", "Unknown") != "Unknown"
+            and profile.get("dlc_version", "Unknown") != "Unknown"
         )
+
+    def refresh_game_detection_if_needed(self) -> None:
+        profile = self.current_profile()
+        game_path = profile.get("game_path", "")
+
+        if not game_path or not Path(game_path).exists():
+            return
+
+        if self.cached_game_detection_is_valid(profile, game_path):
+            return
+
+        region, game_version, dlc_version = self.auto_detect_game_info(game_path)
+        self.save_game_detection(profile, game_path, region, game_version, dlc_version)
+        self.save_config()
 
     def save_game_detection(
         self,
@@ -493,20 +480,40 @@ class BreathMLauncher(QWidget):
 
     def scan_wua_title_folders(self, game_path: str) -> list[tuple[str, str]]:
         titles: list[tuple[str, str]] = []
+        found_types: set[str] = set()
 
         try:
             with open(game_path, "rb") as file:
-                data = file.read(WUA_SCAN_LIMIT_BYTES)
+                previous_chunk = b""
+
+                while True:
+                    chunk = file.read(1024 * 1024 * 16)
+
+                    if not chunk:
+                        break
+
+                    search_data = previous_chunk + chunk
+
+                    for match in WUA_TITLE_FOLDER_RE.finditer(search_data):
+                        title_id = match.group(1).decode("ascii").lower()
+                        version = match.group(2).decode("ascii")
+
+                        entry = (title_id, version)
+                        if entry not in titles:
+                            titles.append(entry)
+
+                        title_info = BOTW_TITLE_IDS.get(title_id)
+                        if title_info is not None:
+                            _, title_type = title_info
+                            found_types.add(title_type)
+
+                    if {"base", "update", "dlc"}.issubset(found_types):
+                        break
+
+                    previous_chunk = search_data[-128:]
+
         except OSError:
             return []
-
-        for match in WUA_TITLE_FOLDER_RE.finditer(data):
-            title_id = match.group(1).decode("ascii").lower()
-            version = match.group(2).decode("ascii")
-
-            entry = (title_id, version)
-            if entry not in titles:
-                titles.append(entry)
 
         return titles
 
@@ -700,7 +707,7 @@ class BreathMLauncher(QWidget):
             server_name = welcome_message.get("server_name", "Unknown Server")
             self.server_name = server_name
             self.server_socket.setblocking(False)
-            self.set_presence_status("launcher")
+            self.set_presence_status(self.current_game_presence_status())
             
         except (OSError, ValueError, msgpack.ExtraData, msgpack.FormatError) as error:
             if self.server_socket is not None:
@@ -785,6 +792,12 @@ class BreathMLauncher(QWidget):
 
         self.game_process = None
         self.set_presence_status("launcher")
+        
+    def current_game_presence_status(self) -> str:
+        if self.game_process is not None and self.game_process.poll() is None:
+            return "in_game"
+
+        return "launcher"
         
     def update_detected_cemu_status(self) -> None:
         if self.game_process is not None and self.game_process.poll() is None:
@@ -976,8 +989,9 @@ class BreathMLauncher(QWidget):
                 status_text = "In Game" if status == "in_game" else "In Launcher"
                 region = str(player.get("region", "Unknown"))
                 game_version = str(player.get("game_version", "Unknown"))
+                dlc_version = str(player.get("dlc_version", "Unknown"))
                 self.player_list_widget.addItem(
-                    f"{username} - {status_text} - {region} - v{game_version}"
+                    f"🟢 {username} — {status_text} — {region} • Game v{game_version} • DLC v{dlc_version}"
                 )
             else:
                 self.player_list_widget.addItem(str(player))
@@ -1100,26 +1114,14 @@ class BreathMLauncher(QWidget):
 
         self.connection_status_label.setText("Status: Disconnected")
         self.server_info_label.setText("Server: Not connected")
-        
-        self.region_box.blockSignals(True)
-        self.region_box.setCurrentText(
-            profile.get("region", "Unknown")
-        )
-        self.region_box.blockSignals(False)
-
-        self.game_version_input.blockSignals(True)
-        self.game_version_input.setText(
-            profile.get("game_version", "")
-        )
-        self.game_version_input.blockSignals(False)
 
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')} ✓")
         self.game_version_label.setText(
             f"Game Version: v{profile.get('game_version', 'Unknown')} ✓"
         )
-        self.dlc_version_label.setText(
-            f"DLC Version: v{profile.get('dlc_version', 'Unknown')} ✓"
-        )
+        dlc_version = profile.get("dlc_version", "Unknown")
+        dlc_text = f"v{dlc_version} ✓" if dlc_version != "Unknown" else "Unknown"
+        self.dlc_version_label.setText(f"DLC Version: {dlc_text}")
 
         self.flatpak_checkbox.blockSignals(True)
         self.flatpak_checkbox.setChecked(profile.get("use_flatpak", False))

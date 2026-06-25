@@ -12,7 +12,7 @@ import (
 )
 
 const listenAddress = "127.0.0.1:30120"
-const protocolVersion = "alpha-0.5"
+const protocolVersion = "alpha-0.6"
 
 type ClientMessage struct {
 	Type     string `msgpack:"type"`
@@ -67,6 +67,32 @@ func firstKnownRegion() string {
 	for client := range clients {
 		if client.Region != "" && client.Region != "Unknown" {
 			return client.Region
+		}
+	}
+
+	return ""
+}
+
+func firstKnownGameVersion() string {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for client := range clients {
+		if client.GameVersion != "" && client.GameVersion != "Unknown" {
+			return client.GameVersion
+		}
+	}
+
+	return ""
+}
+
+func firstKnownDLCVersion() string {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for client := range clients {
+		if client.DLCVersion != "" && client.DLCVersion != "Unknown" {
+			return client.DLCVersion
 		}
 	}
 
@@ -255,6 +281,48 @@ func handleClient(conn net.Conn) {
 
 				if err != nil {
 					log.Printf("Failed to send region rejection to %s: %v", remoteAddr, err)
+				}
+
+				return
+			}
+			
+			serverGameVersion := firstKnownGameVersion()
+
+			if serverGameVersion != "" && msg.GameVersion != "" && msg.GameVersion != "Unknown" && msg.GameVersion != serverGameVersion {
+				log.Printf("Rejected %s: game version mismatch server=%s client=%s", remoteAddr, serverGameVersion, msg.GameVersion)
+
+				reject := ServerMessage{
+					Type:    "error",
+					Message: fmt.Sprintf("Game update mismatch. Server requires v%s, but you are using v%s.", serverGameVersion, msg.GameVersion),
+				}
+
+				client.WriteMutex.Lock()
+				err := client.Encoder.Encode(reject)
+				client.WriteMutex.Unlock()
+
+				if err != nil {
+					log.Printf("Failed to send game version rejection to %s: %v", remoteAddr, err)
+				}
+
+				return
+			}
+
+			serverDLCVersion := firstKnownDLCVersion()
+
+			if serverDLCVersion != "" && msg.DLCVersion != "" && msg.DLCVersion != "Unknown" && msg.DLCVersion != serverDLCVersion {
+				log.Printf("Rejected %s: DLC version mismatch server=%s client=%s", remoteAddr, serverDLCVersion, msg.DLCVersion)
+
+				reject := ServerMessage{
+					Type:    "error",
+					Message: fmt.Sprintf("DLC version mismatch. Server requires v%s, but you are using v%s.", serverDLCVersion, msg.DLCVersion),
+				}
+
+				client.WriteMutex.Lock()
+				err := client.Encoder.Encode(reject)
+				client.WriteMutex.Unlock()
+
+				if err != nil {
+					log.Printf("Failed to send DLC version rejection to %s: %v", remoteAddr, err)
 				}
 
 				return
