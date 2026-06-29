@@ -35,6 +35,12 @@ CONFIG_PATH = get_config_path()
 
 DEFAULT_CONFIG = {
     "active_profile": "Default",
+    "saved_servers": [
+        {
+            "name": "Local Development Server",
+            "address": "127.0.0.1:30120",
+        }
+    ],
     "profiles": {
         "Default": {
             "cemu_path": "",
@@ -50,4 +56,3 @@ DEFAULT_CONFIG = {
         }
     },
 }
-

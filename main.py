@@ -129,6 +129,15 @@ class BreathMLauncher(QWidget):
         self.server_address_input.setPlaceholderText("Server address, example: 127.0.0.1:30120")
         self.server_address_input.editingFinished.connect(self.save_multiplayer_settings)
 
+        self.saved_servers_widget = QListWidget()
+        self.saved_servers_widget.itemDoubleClicked.connect(self.connect_to_selected_saved_server)
+
+        self.add_server_button = QPushButton("Add Server")
+        self.remove_server_button = QPushButton("Remove Server")
+
+        self.add_server_button.clicked.connect(self.add_saved_server)
+        self.remove_server_button.clicked.connect(self.remove_selected_saved_server)
+
         self.connect_button = QPushButton("Connect")
         self.disconnect_button = QPushButton("Disconnect")
         self.connection_status_label = QLabel("Status: Disconnected")
@@ -191,6 +200,14 @@ class BreathMLauncher(QWidget):
         main_layout.addWidget(QLabel("Multiplayer"))
         main_layout.addWidget(self.username_input)
         main_layout.addWidget(self.server_address_input)
+
+        main_layout.addWidget(QLabel("Saved Servers"))
+        main_layout.addWidget(self.saved_servers_widget)
+
+        server_browser_button_row = QHBoxLayout()
+        server_browser_button_row.addWidget(self.add_server_button)
+        server_browser_button_row.addWidget(self.remove_server_button)
+        main_layout.addLayout(server_browser_button_row)
 
         multiplayer_button_row = QHBoxLayout()
         multiplayer_button_row.addWidget(self.connect_button)
@@ -371,6 +388,86 @@ class BreathMLauncher(QWidget):
         profile["username"] = self.username_input.text().strip()
         profile["server_address"] = self.server_address_input.text().strip()
         self.save_config()
+
+    def refresh_saved_servers(self) -> None:
+        self.saved_servers_widget.clear()
+
+        for server in self.config.get("saved_servers", []):
+            name = server.get("name", "Unnamed Server")
+            address = server.get("address", "")
+            self.saved_servers_widget.addItem(f"{name} — {address}")
+
+    def add_saved_server(self) -> None:
+        name, ok = QInputDialog.getText(self, "Add Server", "Server name:")
+
+        if not ok or not name.strip():
+            return
+
+        address, ok = QInputDialog.getText(
+            self,
+            "Add Server",
+            "Server address, example: 127.0.0.1:30120",
+        )
+
+        if not ok or not address.strip():
+            return
+
+        if self.parse_server_address(address.strip()) is None:
+            return
+
+        self.config.setdefault("saved_servers", []).append(
+            {
+                "name": name.strip(),
+                "address": address.strip(),
+            }
+        )
+
+        self.current_profile()["server_address"] = address.strip()
+        self.save_config()
+        self.refresh_labels()
+
+    def remove_selected_saved_server(self) -> None:
+        selected_row = self.saved_servers_widget.currentRow()
+
+        if selected_row < 0:
+            QMessageBox.warning(self, "No Server Selected", "Select a server first.")
+            return
+
+        saved_servers = self.config.get("saved_servers", [])
+
+        if selected_row >= len(saved_servers):
+            return
+
+        server = saved_servers[selected_row]
+        confirm = QMessageBox.question(
+            self,
+            "Remove Server",
+            f"Remove '{server.get('name', 'Unnamed Server')}'?",
+        )
+
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        del saved_servers[selected_row]
+        self.save_config()
+        self.refresh_labels()
+
+    def connect_to_selected_saved_server(self) -> None:
+        selected_row = self.saved_servers_widget.currentRow()
+        saved_servers = self.config.get("saved_servers", [])
+
+        if selected_row < 0 or selected_row >= len(saved_servers):
+            return
+
+        address = saved_servers[selected_row].get("address", "").strip()
+
+        if not address:
+            return
+
+        self.server_address_input.setText(address)
+        self.current_profile()["server_address"] = address
+        self.save_config()
+        self.connect_to_server()
 
     def parse_server_address(self, server_address: str) -> tuple[str, int] | None:
         if ":" not in server_address:
@@ -907,6 +1004,7 @@ class BreathMLauncher(QWidget):
         self.server_address_input.blockSignals(True)
         self.server_address_input.setText(profile.get("server_address", "127.0.0.1:30120"))
         self.server_address_input.blockSignals(False)
+        self.refresh_saved_servers()
 
         self.connection_status_label.setText("Status: Disconnected")
         self.server_info_label.setText("Server: Not connected")

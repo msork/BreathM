@@ -27,6 +27,14 @@ def load_config() -> dict:
     if "active_profile" not in config:
         config["active_profile"] = next(iter(config["profiles"]))
 
+    if "saved_servers" not in config or not isinstance(config["saved_servers"], list):
+        config["saved_servers"] = [
+            {
+                "name": "Local Development Server",
+                "address": "127.0.0.1:30120",
+            }
+        ]
+
     for profile in config["profiles"].values():
         profile.setdefault("cemu_path", "")
         profile.setdefault("game_path", "")
