@@ -66,6 +66,7 @@ class BreathMLauncher(QWidget):
         self.message_unpacker: msgpack.Unpacker | None = None
         self.pending_server_messages: list[dict] = []
         self.server_name = ""
+        self.connected_server_address = ""
         self.connected_player_count = 0
         self.has_received_player_list = False
         self.presence_status = "launcher"
@@ -125,10 +126,6 @@ class BreathMLauncher(QWidget):
         self.username_input.setPlaceholderText("Username")
         self.username_input.editingFinished.connect(self.save_multiplayer_settings)
 
-        self.server_address_input = QLineEdit()
-        self.server_address_input.setPlaceholderText("Server address, example: 127.0.0.1:30120")
-        self.server_address_input.editingFinished.connect(self.save_multiplayer_settings)
-
         self.saved_servers_widget = QListWidget()
         self.saved_servers_widget.itemDoubleClicked.connect(self.connect_to_selected_saved_server)
 
@@ -141,13 +138,19 @@ class BreathMLauncher(QWidget):
         self.connect_button = QPushButton("Connect")
         self.disconnect_button = QPushButton("Disconnect")
         self.connection_status_label = QLabel("Status: Disconnected")
-        self.server_info_label = QLabel("Server: Not connected")
         self.player_list_widget = QListWidget()
+        
+        self.server_name_label = QLabel("Server: Not connected")
+        self.server_address_label = QLabel()
+        self.player_count_label = QLabel()
+        self.protocol_label = QLabel()
+        self.region_info_label = QLabel()
+        self.version_info_label = QLabel()
         
         self.event_log = QTextEdit()
         self.event_log.setReadOnly(True)
 
-        self.connect_button.clicked.connect(self.connect_to_server)
+        self.connect_button.clicked.connect(self.connect_to_selected_saved_server)
         self.disconnect_button.clicked.connect(self.disconnect_from_server)
 
         self.flatpak_checkbox = QCheckBox("Use Flatpak Cemu on Linux")
@@ -199,7 +202,6 @@ class BreathMLauncher(QWidget):
 
         main_layout.addWidget(QLabel("Multiplayer"))
         main_layout.addWidget(self.username_input)
-        main_layout.addWidget(self.server_address_input)
 
         main_layout.addWidget(QLabel("Saved Servers"))
         main_layout.addWidget(self.saved_servers_widget)
@@ -214,7 +216,28 @@ class BreathMLauncher(QWidget):
         multiplayer_button_row.addWidget(self.disconnect_button)
         main_layout.addLayout(multiplayer_button_row)
         main_layout.addWidget(self.connection_status_label)
-        main_layout.addWidget(self.server_info_label)
+
+        main_layout.addSpacing(8)
+
+        main_layout.addWidget(QLabel("Server Information"))
+
+        main_layout.addWidget(self.server_name_label)
+        main_layout.addWidget(self.server_address_label)
+
+        compatibility_row = QHBoxLayout()
+        compatibility_row.addWidget(self.player_count_label)
+        compatibility_row.addStretch()
+        compatibility_row.addWidget(self.protocol_label)
+        main_layout.addLayout(compatibility_row)
+
+        version_row = QHBoxLayout()
+        version_row.addWidget(self.region_info_label)
+        version_row.addStretch()
+        version_row.addWidget(self.version_info_label)
+        main_layout.addLayout(version_row)
+
+        main_layout.addSpacing(8)
+
         main_layout.addWidget(QLabel("Connected Players"))
         main_layout.addWidget(self.player_list_widget)
         
@@ -386,7 +409,6 @@ class BreathMLauncher(QWidget):
     def save_multiplayer_settings(self) -> None:
         profile = self.current_profile()
         profile["username"] = self.username_input.text().strip()
-        profile["server_address"] = self.server_address_input.text().strip()
         self.save_config()
 
     def refresh_saved_servers(self) -> None:
@@ -453,18 +475,25 @@ class BreathMLauncher(QWidget):
         self.refresh_labels()
 
     def connect_to_selected_saved_server(self) -> None:
-        selected_row = self.saved_servers_widget.currentRow()
+        selected_items = self.saved_servers_widget.selectedItems()
         saved_servers = self.config.get("saved_servers", [])
 
+        if not selected_items:
+            QMessageBox.warning(self, "No Server Selected", "Select a server first.")
+            return
+
+        selected_row = self.saved_servers_widget.row(selected_items[0])
+
         if selected_row < 0 or selected_row >= len(saved_servers):
+            QMessageBox.warning(self, "Invalid Server", "Selected server is invalid.")
             return
 
         address = saved_servers[selected_row].get("address", "").strip()
 
         if not address:
+            QMessageBox.warning(self, "Invalid Server", "Selected server has no address.")
             return
 
-        self.server_address_input.setText(address)
         self.current_profile()["server_address"] = address
         self.save_config()
         self.connect_to_server()
@@ -591,6 +620,7 @@ class BreathMLauncher(QWidget):
 
             server_name = welcome_message.get("server_name", "Unknown Server")
             self.server_name = server_name
+            self.connected_server_address = server_address
             self.server_socket.setblocking(False)
             self.set_presence_status(self.current_game_presence_status())
             
@@ -615,9 +645,7 @@ class BreathMLauncher(QWidget):
             f"Status: Connected to {server_name} as {username} ({PROTOCOL_VERSION})"
         )
         
-        self.server_info_label.setText(
-            f"Server: {server_name} | Protocol: {PROTOCOL_VERSION}"
-        )
+        self.update_connected_server_info()
         
         self.force_discord_update()
 
@@ -858,12 +886,55 @@ class BreathMLauncher(QWidget):
             if warning:
                 self.add_event(f"WARNING: {warning}")
                 QMessageBox.warning(self, "Compatibility Warning", warning)
+                
+    def update_connected_server_info(self) -> None:
+        if self.server_socket is None:
+            self.server_name_label.setText("Server: Not connected")
+            self.server_address_label.clear()
+            self.player_count_label.clear()
+            self.protocol_label.clear()
+            self.region_info_label.clear()
+            self.version_info_label.clear()
+            return
+
+        profile = self.current_profile()
+
+        player_word = (
+            "Player"
+            if self.connected_player_count == 1
+            else "Players"
+        )
+
+        self.server_name_label.setText(
+            f"Name: {self.server_name}"
+        )
+
+        self.server_address_label.setText(
+            f"Address: {self.connected_server_address}"
+        )
+
+        self.player_count_label.setText(
+            f"{player_word}: {self.connected_player_count}"
+        )
+
+        self.protocol_label.setText(
+            f"Protocol: {PROTOCOL_VERSION}"
+        )
+
+        self.region_info_label.setText(
+            f"Region: {profile['region']}"
+        )
+
+        self.version_info_label.setText(
+            f"BOTW v{profile['game_version']} • DLC v{profile['dlc_version']}"
+        )
 
     def update_player_list(self, players: list[dict]) -> None:
         self.connected_player_count = len(players)
         self.has_received_player_list = True
 
         self.update_discord_presence()
+        self.update_connected_server_info()
         
         self.player_list_widget.clear()
 
@@ -894,6 +965,7 @@ class BreathMLauncher(QWidget):
             self.server_socket = None
             self.message_unpacker = None
             self.server_name = ""
+            self.connected_server_address = ""
 
         self.player_list_widget.clear()
         self.has_received_player_list = False
@@ -902,7 +974,7 @@ class BreathMLauncher(QWidget):
         self.presence_status = "launcher"
         self.update_discord_presence()
         self.connection_status_label.setText("Status: Disconnected")
-        self.server_info_label.setText("Server: Not connected")
+        self.update_connected_server_info()
         self.event_log.clear()
 
     def pick_cemu(self) -> None:
@@ -1001,13 +1073,10 @@ class BreathMLauncher(QWidget):
         self.username_input.setText(profile.get("username", ""))
         self.username_input.blockSignals(False)
 
-        self.server_address_input.blockSignals(True)
-        self.server_address_input.setText(profile.get("server_address", "127.0.0.1:30120"))
-        self.server_address_input.blockSignals(False)
         self.refresh_saved_servers()
 
         self.connection_status_label.setText("Status: Disconnected")
-        self.server_info_label.setText("Server: Not connected")
+        self.update_connected_server_info()
 
         self.region_label.setText(f"Region: {profile.get('region', 'Unknown')} ✓")
         self.game_version_label.setText(
